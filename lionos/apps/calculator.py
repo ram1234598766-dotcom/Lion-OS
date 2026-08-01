@@ -16,8 +16,15 @@ class CalculatorApp(App):
     description = "A scientific calculator"
     category = "Utilities"
     default_w = 340
-    default_h = 500
+    default_h = 560
     resizable = False
+
+    # layout constants for the history + display header above the keypad
+    HIST_ROWS = 6                 # most recent lines shown, newest on top
+    HIST_LINE_H = 16
+    HIST_H = HIST_ROWS * HIST_LINE_H + 8
+    DISP_H = 66
+    TOP_H = HIST_H + 6 + DISP_H + 6
 
     def __init__(self, os, window=None):
         super().__init__(os, window)
@@ -52,30 +59,46 @@ class CalculatorApp(App):
                     self._press(label)
                     return True
         if event.type == pygame.KEYDOWN:
-            if event.unicode and event.unicode.isprintable():
-                ch = event.unicode
-                if ch.isdigit() or ch in "+-*/(). ":
-                    self.expression += ch
-                    self.redraw()
-                    return True
-                if ch == "=":
-                    self._evaluate()
-                    return True
-            if event.key == pygame.K_BACKSPACE:
-                self.expression = self.expression[:-1]
-                self.redraw()
-                return True
-            if event.key == pygame.K_RETURN:
-                self._evaluate()
+            label = self._key_to_label(event)
+            if label is not None:
+                self._press(label)
                 return True
         return False
+
+    def _key_to_label(self, event):
+        """Map a KEYDOWN to the matching button label, or None if ignored."""
+        ch = getattr(event, "unicode", "") or ""
+        if ch:
+            if ch in "0123456789.":
+                return ch
+            if ch in "+-*/()%":
+                return ch.replace("*", "×").replace("/", "÷").replace("-", "−")
+            if ch == "=":
+                return "="
+            if ch in "cC":
+                return "C"
+        if event.key == pygame.K_RETURN:
+            return "="
+        if event.key == pygame.K_BACKSPACE:
+            return "⌫"
+        if event.key == pygame.K_ESCAPE:
+            return "C"
+        return None
+
+    def _font(self, size):
+        """Return a pygame font, using os.get_font cache when available."""
+        get_font = getattr(self.os, "get_font", None)
+        if get_font is not None:
+            return get_font(size)
+        return pygame.font.Font(None, size)
 
     def _btn_rect(self, r, c):
         pad = 6
         bw = (self.rect.width - pad * 6) // 5
-        bh = (self.rect.height - 140 - pad * 7) // 6
+        top = self.TOP_H
+        bh = (self.rect.height - top - 30 - pad * 7) // 6
         x = self.rect.x + pad + c * (bw + pad)
-        y = self.rect.y + 110 + pad + r * (bh + pad)
+        y = self.rect.y + top + pad + r * (bh + pad)
         return pygame.Rect(x, y, bw, bh)
 
     def _press(self, label):
@@ -89,6 +112,8 @@ class CalculatorApp(App):
         elif label == "±":
             if self.result:
                 self.result = str(-float(self.result))
+        elif label == "%":
+            self._percent()
         elif label == "π":
             self.expression += "3.14159265"
         elif label == "√":
@@ -114,6 +139,30 @@ class CalculatorApp(App):
         else:
             self.expression += label
         self.redraw()
+
+    def _percent(self):
+        """Convert the current operand (or last result) to its /100 value."""
+        import re
+
+        m = re.search(r"(\d+(?:\.\d+)?|\.\d+)\s*$", self.expression)
+        if m:
+            start, end = m.span(1)
+            val = float(m.group(1)) / 100.0
+            if val.is_integer():
+                val = int(val)
+            else:
+                val = round(val, 10)
+            self.expression = self.expression[:start] + str(val) + self.expression[end:]
+        elif self.result not in ("", "Error"):
+            try:
+                val = float(self.result) / 100.0
+            except (TypeError, ValueError):
+                return
+            if val.is_integer():
+                val = int(val)
+            else:
+                val = round(val, 10)
+            self.result = str(val)
 
     def _evaluate(self):
         # Security: input is parsed with `ast` (a safe AST walker) instead of
@@ -176,17 +225,29 @@ class CalculatorApp(App):
                     val = round(val, 10)
             self.result = str(val)
             self.history.append((self.expression, self.result))
+            del self.history[:-30]
             self.expression = ""
         except Exception:
             self.result = "Error"
 
     def draw(self, surface, rect):
         self.rect = rect
-        # display
-        disp = pygame.Rect(rect.x + 6, rect.y + 6, rect.width - 12, 96)
+        # history panel: up to ~6 most recent lines, newest on top
+        hist = pygame.Rect(rect.x + 6, rect.y + 6, rect.width - 12, self.HIST_H)
+        rounded_rect(surface, hist, 10, self.theme.surface)
+        hfont = self._font(15)
+        recent = list(self.history[-self.HIST_ROWS:][::-1])
+        for i, (expr, res) in enumerate(recent):
+            line = hfont.render("%s = %s" % (expr, res), True, self.theme.text_dim)
+            surface.blit(line, (hist.x + 10, hist.y + 4 + i * self.HIST_LINE_H))
+        if not recent:
+            img = hfont.render("History", True, self.theme.text_dim)
+            surface.blit(img, (hist.x + 10, hist.y + 4))
+        # display: current expression + result
+        disp = pygame.Rect(rect.x + 6, hist.bottom + 6, rect.width - 12, self.DISP_H)
         rounded_rect(surface, disp, 10, self.theme.surface_alt)
-        font = pygame.font.Font(None, self.os.config.font_size)
-        small = pygame.font.Font(None, 18)
+        font = self._font(self.os.config.font_size)
+        small = self._font(18)
         expr_img = small.render(self.expression or "0", True, self.theme.text_dim)
         surface.blit(expr_img, (disp.x + 12, disp.y + 10))
         res_img = font.render(self.result or "0", True, self.theme.accent)
@@ -200,7 +261,7 @@ class CalculatorApp(App):
             ("0", ".", "±", "=", "π"),
             ("sin", "cos", "tan", "ln", "log"),
         ]
-        font = pygame.font.Font(None, self.os.config.font_size)
+        font = self._font(self.os.config.font_size)
         for r, row in enumerate(rows):
             for c, label in enumerate(row):
                 btn_rect = self._btn_rect(r, c)

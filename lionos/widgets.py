@@ -791,3 +791,45 @@ def draw_glass_panel(surface, rect, theme, radius=12, border=True):
         bc = theme.glass_border
         pygame.draw.rect(s, bc if len(bc) == 4 else bc + (60,), s.get_rect(), 1, border_radius=radius)
     surface.blit(s, rect.topleft)
+
+
+def draw_app_tile(surface, rect, glyph, theme, hovered=False, pressed=False,
+                  selected=False, font_size=None, label=None):
+    """Draw a gradient app-icon tile with a glyph, used across the desktop.
+
+    Shared by the launcher grid, taskbar, desktop icons and About screen so
+    the identity is consistent.
+    """
+    r = pygame.Rect(rect)
+    radius = max(6, int(r.height * 0.22))
+    # gradient background tile
+    tile = pygame.Surface(r.size, pygame.SRCALPHA)
+    g1 = theme.icon_grad1
+    g2 = theme.icon_grad2
+    for yy in range(r.height):
+        tt = yy / max(1, r.height - 1)
+        col = blend_color(g1, g2, tt)
+        pygame.draw.line(tile, col, (0, yy), (r.width, yy))
+    if pressed:
+        ov = pygame.Surface(r.size, pygame.SRCALPHA)
+        ov.fill((0, 0, 0, 40))
+        tile.blit(ov, (0, 0))
+    elif hovered or selected:
+        ov = pygame.Surface(r.size, pygame.SRCALPHA)
+        ov.fill((255, 255, 255, 26))
+        tile.blit(ov, (0, 0))
+    pygame.draw.rect(tile, (255, 255, 255, 46), tile.get_rect(), 1, border_radius=radius)
+    # clip glyph to tile
+    old = surface.get_clip()
+    clip = pygame.Rect(r)
+    surface.set_clip(clip)
+    surface.blit(tile, r.topleft)
+    f = pygame.font.Font(None, font_size or int(r.height * 0.62))
+    img = f.render(glyph, True, (255, 255, 255))
+    surface.blit(img, img.get_rect(center=r.center))
+    surface.set_clip(old)
+    if label:
+        lf = pygame.font.Font(None, 15)
+        limg = lf.render(label, True, theme.text)
+        surface.blit(limg, limg.get_rect(midtop=(r.centerx, r.bottom + 6)))
+    return r

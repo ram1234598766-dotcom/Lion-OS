@@ -204,7 +204,9 @@ class SettingsApp(App):
             header = font.render("Theme", True, self.theme.text)
             surface.blit(header, (x, y - 14))
             for i, name in enumerate(THEME_NAMES):
-                r = pygame.Rect(x + i * 110, y, 100, 90)
+                col = i % 5
+                row = i // 5
+                r = pygame.Rect(x + col * 110, y + row * 104, 100, 90)
                 if r.collidepoint(pygame.mouse.get_pos()):
                     rounded_rect(surface, r, 10, self.theme.hover if len(self.theme.hover) == 3 else self.theme.hover[:3])
                 else:
@@ -220,7 +222,7 @@ class SettingsApp(App):
                     check = small.render("✓", True, self.theme.accent)
                     surface.blit(check, (r.right - 18, r.y + 4))
             # resolution
-            ry = rect.y + 190
+            ry = rect.y + 190 + (len(THEME_NAMES) // 5) * 104
             rimg = font.render("Fullscreen", True, self.theme.text)
             surface.blit(rimg, (x, ry))
             tg = pygame.Rect(x + 320, ry - 4, 44, 22)

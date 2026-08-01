@@ -1,4 +1,11 @@
-"""Window manager for Lion-OS — windows, dragging, resizing, snapping, focus."""
+"""Window manager for Lion-OS — windows, dragging, resizing, snapping, focus.
+
+The window chrome (shadow / body / titlebar) is rendered once into cached
+surfaces and only re-rendered when the appearance actually changes
+(resize, focus, state, theme, title). Per-frame draw then just blits.
+Windows also carry lightweight animations (open / close / minimize)
+driven by ``step_anim``.
+"""
 
 from __future__ import annotations
 
@@ -8,7 +15,7 @@ from typing import List, Optional, TYPE_CHECKING
 
 import pygame
 
-from .theme import Theme
+from .theme import Theme, blend
 
 if TYPE_CHECKING:
     from .apps.base import App
@@ -19,6 +26,11 @@ WINDOW_STATE_MINIMIZED = "minimized"
 
 TITLEBAR_H = 38
 RESIZE_EDGE = 6
+
+_ANIM_OPEN = "open"
+_ANIM_CLOSE = "close"
+_ANIM_MINIMIZE = "minimize"
+_ANIM_MAXIMIZE = "maximize"
 
 
 class Window:
@@ -38,16 +50,24 @@ class Window:
         self.closable = True
         self.maximizable = True
         self.minimizable = True
-        self.snapped = False          # "left" | "right" | None
+        self.snapped = False          # "left" | "right" | "tl" ... | None
         self.visible = True
         self.anim_scale = 1.0
+        self.anim_alpha = 255
         self._anim_target = 1.0
+        self._anim_kind = None        # None | "open" | "close" | "minimize" | "maximize"
+        self._anim_t = 0.0
+        self._anim_dur = 0.12
         self._drag_mode = None        # None | "move" | edge name
         self._drag_offset = (0, 0)
         self._focus_grab_time = 0.0
         self.background = None        # optional cached background
         self._dirty = True
         self.on_close = None
+
+        # cached chrome surfaces
+        self._chrome = {}             # kind -> Surface
+        self._chrome_key = None
 
     # -- properties ---------------------------------------------------------
     @property
@@ -61,6 +81,105 @@ class Window:
         return pygame.Rect(self.rect.x, self.rect.y + TITLEBAR_H,
                            self.rect.width, self.rect.height - TITLEBAR_H)
 
+    # -- animations ----------------------------------------------------------
+    def begin_anim(self, kind: str):
+        self._anim_kind = kind
+        self._anim_t = 0.0
+        self._dirty = True
+
+    def anim_active(self) -> bool:
+        return self._anim_kind is not None
+
+    def step_anim(self, dt: float) -> bool:
+        """Advance an active animation. Returns True while still animating."""
+        if self._anim_kind is None:
+            return False
+        self._anim_t += dt
+        t = min(1.0, self._anim_t / self._anim_dur)
+        ease = 1.0 - (1.0 - t) ** 3          # ease-out cubic
+        kind = self._anim_kind
+        if kind == _ANIM_OPEN:
+            self.anim_scale = 0.86 + 0.14 * ease
+            self.anim_alpha = int(60 + 195 * ease)
+        elif kind == _ANIM_CLOSE:
+            self.anim_scale = 1.0 - 0.16 * ease
+            self.anim_alpha = int(255 * (1.0 - ease))
+        elif kind == _ANIM_MINIMIZE:
+            self.anim_scale = 1.0 - 0.35 * ease
+            self.anim_alpha = int(255 * (1.0 - 0.6 * ease))
+        elif kind == _ANIM_MAXIMIZE:
+            self.anim_scale = 0.92 + 0.08 * ease
+            self.anim_alpha = 255
+        self._dirty = True
+        if t >= 1.0:
+            self._finish_anim(kind)
+            return False
+        return True
+
+    def _finish_anim(self, kind: str):
+        self._anim_kind = None
+        self.anim_scale = 1.0
+        self.anim_alpha = 255
+        if kind == _ANIM_CLOSE and self.app:
+            self.app.close()
+        elif kind == _ANIM_MINIMIZE:
+            self.state = WINDOW_STATE_MINIMIZED
+        self._dirty = True
+
+    # -- chrome cache ----------------------------------------------------------
+    def ensure_chrome(self, theme: Theme, focused: bool, font, font_size: int):
+        """Render cached shadow/body/titlebar surfaces if the key changed."""
+        key = (self.rect.size, focused, self.state, theme.name, self.title)
+        if key == self._chrome_key and self._chrome:
+            return
+        w, h = self.rect.size
+        self._chrome = {}
+
+        # shadow (normal state only; maximized has none)
+        if self.state != WINDOW_STATE_MAXIMIZED:
+            pad = 12
+            sh = pygame.Surface((w + pad * 2, h + pad * 2), pygame.SRCALPHA)
+            pygame.draw.rect(sh, theme.shadow[:3] + (150,),
+                             (pad - 3, pad - 3, w + 6, h + 6), border_radius=14)
+            pygame.draw.rect(sh, theme.shadow[:3] + (60,),
+                             (pad, pad, w, h), border_radius=12)
+            self._chrome["shadow"] = sh
+
+        # body
+        body = pygame.Surface((w, h), pygame.SRCALPHA)
+        bg = theme.surface if len(theme.surface) == 3 else theme.surface
+        bg_a = bg + (246,) if len(bg) == 3 else bg
+        pygame.draw.rect(body, bg_a, body.get_rect(), border_radius=12)
+        if focused:
+            border = theme.accent + (70,) if len(theme.accent) == 3 else theme.accent
+            pygame.draw.rect(body, border, body.get_rect(), 1, border_radius=12)
+        else:
+            pygame.draw.rect(body, (255, 255, 255, 30), body.get_rect(), 1, border_radius=12)
+        self._chrome["body"] = body
+
+        # titlebar (gradient + title text)
+        tb = pygame.Surface((w, TITLEBAR_H), pygame.SRCALPHA)
+        for yy in range(TITLEBAR_H):
+            tt = yy / max(1, TITLEBAR_H - 1)
+            col = blend(theme.titlebar_top, theme.titlebar_bottom, tt)
+            pygame.draw.line(tb, col, (0, yy), (w, yy))
+        if not focused:
+            dim = pygame.Surface((w, TITLEBAR_H), pygame.SRCALPHA)
+            dim.fill((0, 0, 0, 28))
+            tb.blit(dim, (0, 0))
+        pygame.draw.line(tb, (255, 255, 255, 14), (0, TITLEBAR_H - 1), (w, TITLEBAR_H - 1))
+        tcol = theme.text if focused else theme.text_dim
+        img = font.render(self.title or (self.app.name if self.app else "Window"), True, tcol)
+        tb.blit(img, (12, TITLEBAR_H // 2 - img.get_height() // 2))
+        self._chrome["titlebar"] = tb
+
+        self._chrome_key = key
+
+    def invalidate_chrome(self):
+        self._chrome = {}
+        self._chrome_key = None
+        self._dirty = True
+
     # -- state ---------------------------------------------------------------
     def maximize(self, screen_rect: pygame.Rect):
         if not self.maximizable:
@@ -69,7 +188,8 @@ class Window:
         self.rect = pygame.Rect(screen_rect)
         self.state = WINDOW_STATE_MAXIMIZED
         self.snapped = None
-        self._dirty = True
+        self.begin_anim(_ANIM_MAXIMIZE)
+        self.invalidate_chrome()
 
     def restore(self):
         if self.state == WINDOW_STATE_MAXIMIZED:
@@ -77,8 +197,9 @@ class Window:
             self.state = WINDOW_STATE_NORMAL
         elif self.state == WINDOW_STATE_MINIMIZED:
             self.state = WINDOW_STATE_NORMAL
+            self.begin_anim(_ANIM_OPEN)
         self.snapped = None
-        self._dirty = True
+        self.invalidate_chrome()
 
     def toggle_maximize(self, screen_rect):
         if self.state == WINDOW_STATE_MAXIMIZED:
@@ -89,30 +210,36 @@ class Window:
     def minimize(self):
         if not self.minimizable:
             return
-        self.state = WINDOW_STATE_MINIMIZED
-        self._dirty = True
+        if self._anim_kind == _ANIM_MINIMIZE:
+            return
+        self.begin_anim(_ANIM_MINIMIZE)
+        self.invalidate_chrome()
 
     def snap(self, side, screen_rect: pygame.Rect):
-        """Snap window to left/right half or to a corner."""
+        """Snap window to a half (left/right) or a corner (tl/tr/bl/br)."""
         if self.state == WINDOW_STATE_MAXIMIZED:
             self.restore()
-        w = screen_rect.width // 2
-        h = screen_rect.height - 0  # keep full height
+        sr = screen_rect
+        w2 = sr.width // 2
+        h2 = sr.height // 2
+        x = sr.x
+        y = sr.y
         if side == "left":
-            self.rect = pygame.Rect(screen_rect.x, screen_rect.y, w, screen_rect.height)
+            self.rect = pygame.Rect(x, y, w2, sr.height)
         elif side == "right":
-            self.rect = pygame.Rect(screen_rect.x + w, screen_rect.y, w, screen_rect.height)
+            self.rect = pygame.Rect(x + w2, y, w2, sr.height)
         elif side == "tl":
-            self.rect = pygame.Rect(screen_rect.x, screen_rect.y, w, h)
+            self.rect = pygame.Rect(x, y, w2, h2)
         elif side == "tr":
-            self.rect = pygame.Rect(screen_rect.x + w, screen_rect.y, w, h)
+            self.rect = pygame.Rect(x + w2, y, w2, h2)
         elif side == "bl":
-            self.rect = pygame.Rect(screen_rect.x, screen_rect.y + 0, w, h)
+            self.rect = pygame.Rect(x, y + h2, w2, h2)
         elif side == "br":
-            self.rect = pygame.Rect(screen_rect.x + w, screen_rect.y + 0, w, h)
+            self.rect = pygame.Rect(x + w2, y + h2, w2, h2)
         self.snapped = side
         self.state = WINDOW_STATE_NORMAL
-        self._dirty = True
+        self.begin_anim(_ANIM_MAXIMIZE)
+        self.invalidate_chrome()
 
     # -- hit testing ----------------------------------------------------------
     def hit_test(self, pos) -> Optional[str]:
@@ -165,11 +292,11 @@ class Window:
         if "b" in mode:
             r.height = max(self.min_h, min(screen_rect.bottom, r.height + dy) - r.y)
         self.rect = r
-        self._dirty = True
+        self.invalidate_chrome()
 
 
 class WindowManager:
-    """Owns all windows: z-order, focus, drag/resize state, snapping."""
+    """Owns all windows: z-order, focus, drag/resize state, snapping, alt-tab."""
 
     SNAP_EDGE = 12          # px from screen edge to trigger snap
     SNAP_MARGIN = 60        # px near edge to show snap preview
@@ -186,6 +313,10 @@ class WindowManager:
         self._down_pos = None
         self._down_win = None
         self._maximize_drag = False
+        # alt-tab switcher
+        self.alt_tab_active = False
+        self._alt_tab_idx = 0
+        self._alt_tab_order: List[Window] = []
 
     def set_screen(self, rect):
         self.screen_rect = rect
@@ -228,8 +359,10 @@ class WindowManager:
             self.windows.append(win)
         self.focused = win
         win._focus_grab_time = time.time()
+        win.invalidate_chrome()
         if win.state == WINDOW_STATE_MINIMIZED:
             win.state = WINDOW_STATE_NORMAL
+            win.begin_anim(_ANIM_OPEN)
 
     def top_at(self, pos) -> Optional[Window]:
         for w in reversed(self.windows):
@@ -237,9 +370,39 @@ class WindowManager:
                 return w
         return None
 
+    def visible_windows(self) -> List[Window]:
+        return [w for w in self.windows if w.visible and w.state != WINDOW_STATE_MINIMIZED]
+
     def __iter__(self):
         return iter(self.windows)
 
+    # -- alt-tab switcher -------------------------------------------------------
+    def start_alt_tab(self):
+        order = self.visible_windows()
+        if not order:
+            return
+        self._alt_tab_order = order
+        self._alt_tab_idx = 0
+        self.alt_tab_active = True
+
+    def alt_tab_cycle(self):
+        if not self.alt_tab_active or not self._alt_tab_order:
+            return
+        self._alt_tab_idx = (self._alt_tab_idx + 1) % len(self._alt_tab_order)
+
+    def alt_tab_activate(self):
+        if not self.alt_tab_active or not self._alt_tab_order:
+            return
+        win = self._alt_tab_order[self._alt_tab_idx]
+        self.focus(win)
+        self.alt_tab_active = False
+        self._alt_tab_order = []
+
+    def alt_tab_cancel(self):
+        self.alt_tab_active = False
+        self._alt_tab_order = []
+
+    # -- event handling ---------------------------------------------------------
     def handle_event(self, event) -> bool:
         """Handle window-manager-level events. Returns True if consumed."""
         # --- mouse down ------------------------------------------------------
@@ -301,8 +464,11 @@ class WindowManager:
                 if self._drag_mode == "move" and self._snap_preview:
                     # apply snap
                     side = self._snap_preview.get("side")
-                    if side in ("left", "right"):
-                        w.snap(side, self.screen_rect)
+                    if side in ("left", "right", "tl", "tr", "bl", "br", "max"):
+                        if side == "max":
+                            w.maximize(self.screen_rect)
+                        else:
+                            w.snap(side, self.screen_rect)
                     self._snap_preview = None
                 self._drag_win = None
                 self._drag_mode = None
@@ -344,20 +510,30 @@ class WindowManager:
         if win.state == WINDOW_STATE_MAXIMIZED:
             self._snap_preview = None
             return
-        x = pos[0]
+        x, y = pos
         sr = self.screen_rect
         self._snap_preview = None
-        if x <= sr.left + self.SNAP_MARGIN:
-            self._snap_preview = {"side": "left",
-                                  "rect": pygame.Rect(sr.left, sr.top, sr.width // 2, sr.height),
-                                  "label": "Left"}
-        elif x >= sr.right - self.SNAP_MARGIN:
-            self._snap_preview = {"side": "right",
-                                  "rect": pygame.Rect(sr.left + sr.width // 2, sr.top, sr.width // 2, sr.height),
-                                  "label": "Right"}
-        elif win.rect.y <= sr.top + self.SNAP_MARGIN and pos[1] <= sr.top + self.SNAP_MARGIN:
-            self._snap_preview = {"side": "max", "rect": pygame.Rect(sr),
-                                  "label": "Maximize"}
+        w2 = sr.width // 2
+        h2 = sr.height // 2
+        m = self.SNAP_MARGIN
+        near_l = x <= sr.left + m
+        near_r = x >= sr.right - m
+        near_t = y <= sr.top + m
+        near_b = y >= sr.bottom - m
+        if near_l and near_t:
+            self._snap_preview = {"side": "tl", "rect": pygame.Rect(sr.left, sr.top, w2, h2), "label": "Top-left"}
+        elif near_r and near_t:
+            self._snap_preview = {"side": "tr", "rect": pygame.Rect(sr.left + w2, sr.top, w2, h2), "label": "Top-right"}
+        elif near_l and near_b:
+            self._snap_preview = {"side": "bl", "rect": pygame.Rect(sr.left, sr.top + h2, w2, h2), "label": "Bottom-left"}
+        elif near_r and near_b:
+            self._snap_preview = {"side": "br", "rect": pygame.Rect(sr.left + w2, sr.top + h2, w2, h2), "label": "Bottom-right"}
+        elif near_l:
+            self._snap_preview = {"side": "left", "rect": pygame.Rect(sr.left, sr.top, w2, sr.height), "label": "Left"}
+        elif near_r:
+            self._snap_preview = {"side": "right", "rect": pygame.Rect(sr.left + w2, sr.top, w2, sr.height), "label": "Right"}
+        elif win.rect.y <= sr.top + self.SNAP_MARGIN and y <= sr.top + self.SNAP_MARGIN:
+            self._snap_preview = {"side": "max", "rect": pygame.Rect(sr), "label": "Maximize"}
 
     def draw_snap_preview(self, surface, theme):
         sp = self._snap_preview

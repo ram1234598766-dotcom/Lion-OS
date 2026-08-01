@@ -1,4 +1,10 @@
-"""Lion-OS kernel — the main desktop environment and event loop."""
+"""Lion-OS kernel — the main desktop environment and event loop.
+
+Refined for performance (cached window chrome, prerendered wallpaper,
+dirty-flag redraw), a complete shell (desktop icons, power menu, Alt-Tab,
+window animations) and an evolved identity (animated theme transitions,
+shared app-icon tiles, upgraded launcher and login).
+"""
 
 from __future__ import annotations
 
@@ -13,8 +19,9 @@ import pygame
 from . import __version__
 from .config import ConfigStore, LionConfig, ensure_config_dir
 from .theme import Theme, THEMES, blend
-from .wm import Window, WindowManager, TITLEBAR_H, WINDOW_STATE_MAXIMIZED, WINDOW_STATE_MINIMIZED
-from .widgets import Menu, Toast, draw_glass_panel, rounded_rect
+from .wm import (Window, WindowManager, TITLEBAR_H,
+                 WINDOW_STATE_MAXIMIZED, WINDOW_STATE_MINIMIZED)
+from .widgets import Menu, Toast, draw_app_tile, draw_glass_panel, rounded_rect
 
 BOOT_LINES = [
     ("Lion-OS Kernel v" + __version__, True),
@@ -26,9 +33,23 @@ BOOT_LINES = [
     ("Pride edition ready.", True),
 ]
 
+# Desktop icons shown on the wallpaper. Each is (label, app name).
 DESKTOP_ICONS = [
-    # (label, app name)
+    ("Calculator", "Calculator"),
+    ("Terminal", "Terminal"),
+    ("File Manager", "File Manager"),
+    ("Text Editor", "Text Editor"),
+    ("Notes", "Notes"),
+    ("Paint", "Paint"),
+    ("Settings", "Settings"),
+    ("Media Player", "Media Player"),
 ]
+
+DESKTOP_TILE = 84          # desktop icon tile size
+DESKTOP_GAP = 12
+DESKTOP_START = 16
+
+THEME_TRANSITION_TIME = 0.4
 
 
 class LionOS:
@@ -67,6 +88,8 @@ class LionOS:
         self.launcher_open = False
         self.launcher_search = ""
         self.launcher_filter = ""
+        self.launcher_category = "All"
+        self._launcher_idx = 0
         self.power_menu_open = False
         self.context_menu = None           # (pos, items)
 
@@ -74,6 +97,7 @@ class LionOS:
         self._boot_progress = 0.0
         self._boot_lines_done = 0
         self._boot_ready = False
+        self._boot_glow = 0.0
 
         # login state
         self._login_attempt = 0
@@ -81,6 +105,22 @@ class LionOS:
         self._login_error = ""
         self._login_focus = 0
         self._login_clock = time.time()
+        self._login_shake = 0.0
+
+        # theme transition
+        self._theme_from: Optional[Theme] = None
+        self._theme_to: Optional[Theme] = None
+        self._theme_t = 0.0
+
+        # desktop icons
+        self._desktop_sel = None           # selected icon label
+        self._desktop_click_time = 0.0
+        self._desktop_click_icon = None
+
+        # power / reboot
+        self._shutting_down = False
+        self._restarting = False
+        self._power_fade = 0.0
 
         # decorations
         self._show_clock_sec = False
@@ -88,10 +128,27 @@ class LionOS:
         self._bg_shift = 0.0
         self._dt = 0.016
 
+        # performance
+        self._font_cache: Dict[tuple, pygame.font.Font] = {}
+        self._wallpaper_surf = None
+        self._wallpaper_glow = None
+        self._wallpaper_key = None
+        self._needs_redraw = True
+
         # hidden for testing
         self._no_draw = os.environ.get("LION_OS_HEADLESS") == "1"
+        self._smoke_test_done = False
 
         self._load_apps()
+
+    # ------------------------------------------------------------------ fonts
+    def get_font(self, size: int, bold=False):
+        key = (size, bold)
+        if key not in self._font_cache:
+            self._font_cache[key] = pygame.font.Font(None, size)
+            if bold:
+                self._font_cache[key].set_bold(True)
+        return self._font_cache[key]
 
     # ------------------------------------------------------------------ apps
     def _load_apps(self):
@@ -114,6 +171,13 @@ class LionOS:
         if cls.singleton:
             self.launched[name] = inst
         inst.on_open()
+        # remember app in MRU
+        mru = list(self.config.mru_apps)
+        if name in mru:
+            mru.remove(name)
+        mru.insert(0, name)
+        self.config_store.set(mru_apps=mru[:8])
+        self._needs_redraw = True
         return inst
 
     # ------------------------------------------------------------------ utils
@@ -121,22 +185,40 @@ class LionOS:
         self.toasts.append(Toast(title, message, self.theme, kind=kind))
         if len(self.toasts) > 4:
             self.toasts.pop(0)
+        self._needs_redraw = True
 
     def open_menu(self, items, pos):
-        font = pygame.font.Font(None, self.config.font_size)
+        font = self.get_font(self.config.font_size)
         m = Menu(items, pos, font, self.theme)
         self.menus.append(m)
+        self._needs_redraw = True
 
     def close_menus(self):
         for m in self.menus:
             m.visible = False
         self.menus = []
         self.context_menu = None
+        self._needs_redraw = True
 
     def set_theme(self, name: str):
-        self.theme = THEMES.get(name, self.theme)
+        if name not in THEMES:
+            return
         self.config_store.set(theme=name)
+        self.config.theme = name
+        target = THEMES[name]
+        if self.config.anim_enabled and not self._no_draw:
+            self._theme_from = self.theme
+            self._theme_to = target
+            self._theme_t = 0.0
+        else:
+            self._theme_from = self._theme_to = None
+        # switch immediately (existing contract); transition blends via _theme_from
+        self.theme = target
         self.wm.theme = self.theme
+        self._wallpaper_key = None
+        for w in self.wm.windows:
+            w.invalidate_chrome()
+        self._needs_redraw = True
 
     def set_wallpaper(self, kind=None, color=None):
         if kind:
@@ -145,6 +227,8 @@ class LionOS:
         if color:
             self.config_store.set(wallpaper_color=color)
             self.config.wallpaper_color = color
+        self._wallpaper_key = None
+        self._needs_redraw = True
 
     # ------------------------------------------------------------------ boot
     def _update_boot(self, dt):
@@ -163,12 +247,20 @@ class LionOS:
                 self._handle_event(event)
             self._update(dt)
             if not self._no_draw:
-                self._draw()
+                if self._needs_redraw or self._any_animating():
+                    self._draw()
+                    self._needs_redraw = False
             else:
                 self._headless_tick()
         self.shutdown = True
         pygame.quit()
         return 0
+
+    def _any_animating(self) -> bool:
+        for w in self.wm.windows:
+            if w.anim_active():
+                return True
+        return False
 
     def _headless_tick(self):
         """When LION_OS_HEADLESS=1, keep the loop alive without rendering
@@ -179,19 +271,45 @@ class LionOS:
 
     def _update(self, dt):
         self._bg_shift += dt * 0.05
+        self._boot_glow += dt * 1.6
         if not self.booted:
             self._update_boot(dt)
             if self._boot_ready:
                 self.booted = True
+                self._needs_redraw = True
             return
 
         if not self.logged_in:
             self._login_clock += dt
+            if self._login_shake > 0:
+                self._login_shake = max(0.0, self._login_shake - dt * 6)
+            return
+
+        self._update_theme_transition(dt)
+
+        # power-off fade
+        if self._shutting_down or self._restarting:
+            self._power_fade = min(1.0, self._power_fade + dt * 1.2)
+            if self._power_fade >= 1.0:
+                if self._restarting:
+                    self._restart()
+                else:
+                    self.running = False
+            self._needs_redraw = True
             return
 
         for t in self.toasts:
             t.update(dt)
         self.toasts = [t for t in self.toasts if not t.done]
+
+        # step window animations
+        animating = False
+        for w in self.wm.windows:
+            if w.anim_active():
+                w.step_anim(dt)
+                animating = True
+        if animating:
+            self._needs_redraw = True
 
         for inst in list(self.instances):
             if inst.closed:
@@ -200,6 +318,7 @@ class LionOS:
                 if self.apps_registry and inst.window.app and \
                    self.launched.get(inst.window.app.name) is inst:
                     self.launched.pop(inst.window.app.name, None)
+                self._needs_redraw = True
                 continue
             if inst.window.state != WINDOW_STATE_MINIMIZED:
                 inst.update(dt)
@@ -208,7 +327,44 @@ class LionOS:
                 inst.rect = pygame.Rect(inst.window.content_rect)
                 inst.on_resize(inst.rect)
             inst._last = pygame.Rect(inst.window.content_rect)
+            if inst.window._dirty:
+                self._needs_redraw = True
+                inst.window._dirty = False
 
+    def _update_theme_transition(self, dt):
+        if self._theme_from is None or self._theme_to is None:
+            return
+        self._theme_t = min(1.0, self._theme_t + dt / THEME_TRANSITION_TIME)
+        self.theme = self._theme_from.interpolate(self._theme_to, self._theme_t)
+        self.wm.theme = self.theme
+        for w in self.wm.windows:
+            w.invalidate_chrome()
+        self._wallpaper_key = None
+        self._needs_redraw = True
+        if self._theme_t >= 1.0:
+            self.theme = self._theme_to
+            self.wm.theme = self.theme
+            self._theme_from = self._theme_to = None
+            self._needs_redraw = True
+
+    def _restart(self):
+        self._restarting = False
+        self._power_fade = 0.0
+        self.booted = False
+        self.logged_in = False
+        self._boot_progress = 0.0
+        self._boot_lines_done = 0
+        self._boot_ready = False
+        # close all windows and start fresh
+        for inst in list(self.instances):
+            inst.closed = True
+        self.instances = []
+        self.launched = {}
+        self.wm.windows = []
+        self.wm.focused = None
+        self._needs_redraw = True
+
+    # ------------------------------------------------------------------ event
     def _handle_event(self, event):
         if event.type == pygame.QUIT:
             self._request_quit()
@@ -224,6 +380,8 @@ class LionOS:
             self._handle_login_event(event)
             return
 
+        self._needs_redraw = True
+
         # context menu
         if self.context_menu:
             consumed = self.context_menu[2].handle_event(event, event.pos, self.theme) if hasattr(self.context_menu[2], "handle_event") else False
@@ -231,7 +389,21 @@ class LionOS:
                 self.context_menu = None
             return
 
+        # Alt-Tab switcher
+        if self.wm.alt_tab_active:
+            self._handle_alt_tab_event(event)
+            return
+
         if event.type == pygame.KEYDOWN:
+            # global hotkeys
+            if event.key == pygame.K_LSUPER or event.key == pygame.K_RSUPER:
+                self.launcher_open = not self.launcher_open
+                self.power_menu_open = False
+                self.launcher_search = ""
+                return
+            if event.key == pygame.K_TAB and (event.mod & pygame.KMOD_ALT):
+                self.wm.start_alt_tab()
+                return
             if event.key == pygame.K_ESCAPE:
                 if self.launcher_open:
                     self.launcher_open = False
@@ -249,6 +421,18 @@ class LionOS:
         if self.launcher_open:
             self._handle_launcher_event(event)
             return
+
+        # desktop right-click context menu
+        if event.type == pygame.MOUSEBUTTONDOWN and event.button == 3:
+            if not self.wm.top_at(event.pos):
+                self._open_desktop_menu(event.pos)
+                return
+
+        # desktop icon interactions (left-click, double-click)
+        if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+            if not self.wm.top_at(event.pos):
+                self._handle_desktop_click(event)
+                return
 
         # taskbar interactions
         if event.type in (pygame.MOUSEBUTTONDOWN, pygame.MOUSEBUTTONUP) and event.button == 1:
@@ -313,6 +497,7 @@ class LionOS:
         self._boot_progress = 100
         self._boot_ready = True
         self.booted = True
+        self._needs_redraw = True
 
     # --------------------------------------------------------------- login UI
     def _handle_login_event(self, event):
@@ -325,9 +510,10 @@ class LionOS:
                 else:
                     self._login_error = "Incorrect password. Try again."
                     self._login_pw = ""
+                    self._login_shake = 0.6
             elif event.key == pygame.K_BACKSPACE:
                 self._login_pw = self._login_pw[:-1]
-            elif event.unicode and event.unicode.isprintable():
+            elif getattr(event, "unicode", "") and event.unicode.isprintable():
                 self._login_pw += event.unicode
 
     def _do_login(self):
@@ -342,6 +528,47 @@ class LionOS:
             except Exception:
                 pass
         self.show_toast("Welcome", f"Welcome back, {self.config.username}!", "success")
+        self._needs_redraw = True
+
+    # ---------------------------------------------------------- desktop icons
+    def _desktop_icon_rects(self):
+        out = []
+        x = DESKTOP_START
+        y = DESKTOP_START
+        for label, app in DESKTOP_ICONS:
+            if app not in self.apps_registry.all():
+                continue
+            out.append(((label, app), pygame.Rect(x, y, DESKTOP_TILE, DESKTOP_TILE + 22)))
+            x += DESKTOP_TILE + DESKTOP_GAP
+            if x + DESKTOP_TILE > self.screen_w - 40:
+                x = DESKTOP_START
+                y += DESKTOP_TILE + 40
+        return out
+
+    def _handle_desktop_click(self, event):
+        pos = event.pos
+        now = time.time()
+        for (label, app), rect in self._desktop_icon_rects():
+            if rect.collidepoint(pos):
+                if label == self._desktop_click_icon and now - self._desktop_click_time < 0.4:
+                    self.launch(app)
+                    self._desktop_click_icon = None
+                else:
+                    self._desktop_click_icon = label
+                    self._desktop_click_time = now
+                self._desktop_sel = label
+                return
+        self._desktop_sel = None
+        self._desktop_click_icon = None
+
+    def _open_desktop_menu(self, pos):
+        items = [
+            ("Open Terminal", lambda: self.launch("Terminal")),
+            ("Open Settings", lambda: self.launch("Settings")),
+            ("Refresh", lambda: self._needs_redraw or None),
+        ]
+        self.context_menu = (pos, items)
+        self.open_menu(items, pos)
 
     # ------------------------------------------------------------- launcher UI
     def _handle_launcher_event(self, event):
@@ -351,32 +578,78 @@ class LionOS:
                 return
             if event.key == pygame.K_BACKSPACE:
                 self.launcher_search = self.launcher_search[:-1]
+                self.launcher_category = "All"
                 return
-            if event.unicode and (event.unicode.isprintable() or event.unicode == " "):
-                self.launcher_search += event.unicode
-                return
-            if event.key == pygame.K_RETURN:
-                # launch first result
+            if event.key == pygame.K_DOWN or event.key == pygame.K_UP:
                 results = self._launcher_results()
                 if results:
-                    self.launch(results[0].name)
+                    n = len(results)
+                    step = 1 if event.key == pygame.K_DOWN else -1
+                    self._launcher_idx = (self._launcher_idx + step) % n
+                return
+            if event.key == pygame.K_RIGHT or event.key == pygame.K_LEFT:
+                cols = 8
+                results = self._launcher_results()
+                if results:
+                    n = len(results)
+                    step = 1 if event.key == pygame.K_RIGHT else -1
+                    self._launcher_idx = (self._launcher_idx + step * cols) % n
+                return
+            if getattr(event, "unicode", "") and (event.unicode.isprintable() or event.unicode == " "):
+                self.launcher_search += event.unicode
+                self.launcher_category = "All"
+                self._launcher_idx = 0
+                return
+            if event.key == pygame.K_RETURN:
+                results = self._launcher_results()
+                if results:
+                    idx = getattr(self, "_launcher_idx", 0) % len(results)
+                    self.launch(results[idx].name)
                     self.launcher_open = False
                 return
         if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+            # category tabs
+            tab = self._launcher_tab_at(event.pos)
+            if tab is not None:
+                self.launcher_category = tab
+                self._launcher_idx = 0
+                return
             # click on app tile
-            x, y = event.pos
-            if self._launcher_tile_at(x, y) is not None:
-                name = self._launcher_tile_at(x, y)
+            name = self._launcher_tile_at(event.pos)
+            if name is not None:
                 self.launch(name)
                 self.launcher_open = False
+
+    def _launcher_categories(self):
+        cats = ["All"]
+        for a in self.apps_registry.all().values():
+            if a.category not in cats:
+                cats.append(a.category)
+        return cats
 
     def _launcher_results(self):
         q = self.launcher_search.lower()
         apps = list(self.apps_registry.all().values())
+        if self.launcher_category != "All":
+            apps = [a for a in apps if a.category == self.launcher_category]
         if q:
             apps = [a for a in apps if q in a.name.lower() or q in a.category.lower() or
                     q in a.description.lower()]
         return apps
+
+    def _launcher_tab_at(self, x, y):
+        if not self.launcher_open:
+            return None
+        cats = self._launcher_categories()
+        fx = self.get_font(16)
+        tx = self.screen_w // 2 - 200
+        for c in cats:
+            w = fx.size(c)[0] + 24
+            r = pygame.Rect(tx, 148, w, 30)
+            if r.collidepoint((x, y)):
+                return c
+            tx += w + 6
+        return None
 
     def _launcher_tile_at(self, x, y):
         if not self.launcher_open:
@@ -389,7 +662,7 @@ class LionOS:
         start_x = (self.screen_w - cols * size) // 2
         for i, app in enumerate(results):
             cx = start_x + (i % cols) * size
-            cy = 170 + (i // cols) * size
+            cy = 210 + (i // cols) * size
             if x in range(cx, cx + size) and y in range(cy, cy + size):
                 return app.name
         return None
@@ -399,7 +672,61 @@ class LionOS:
         if event.type == pygame.KEYDOWN:
             if event.key == pygame.K_ESCAPE:
                 self.power_menu_open = False
-        # handled during draw via buttons; simple: click outside closes
+                return
+        if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+            pos = event.pos
+            if not self._power_menu_panel().collidepoint(pos):
+                self.power_menu_open = False
+                return
+            action = self._power_menu_action_at(pos)
+            if action == "lock":
+                self._do_lock()
+            elif action == "restart":
+                self._restarting = True
+                self.power_menu_open = False
+                self._power_fade = 0.0
+            elif action == "shutdown":
+                self._shutting_down = True
+                self.power_menu_open = False
+                self._power_fade = 0.0
+            elif action == "sleep":
+                self._do_lock()
+
+    def _do_lock(self):
+        self.logged_in = False
+        self.power_menu_open = False
+        self.launcher_open = False
+        self._login_pw = ""
+        self._login_error = ""
+        self._login_clock = time.time()
+        self._needs_redraw = True
+
+    def _power_menu_panel(self):
+        w, h = 260, 300
+        return pygame.Rect(self.screen_w // 2 - w // 2, self.screen_h // 2 - h // 2, w, h)
+
+    def _power_menu_actions(self):
+        return [("lock", "Lock", "🔒"), ("sleep", "Sleep", "😴"),
+                ("restart", "Restart", "🔄"), ("shutdown", "Shut Down", "⏻")]
+
+    def _power_menu_action_at(self, pos):
+        panel = self._power_menu_panel()
+        for i, (key, label, icon) in enumerate(self._power_menu_actions()):
+            r = pygame.Rect(panel.x + 20, panel.y + 60 + i * 56, panel.width - 40, 44)
+            if r.collidepoint(pos):
+                return key
+        return None
+
+    # ----------------------------------------------------------- alt-tab event
+    def _handle_alt_tab_event(self, event):
+        if event.type == pygame.KEYDOWN:
+            if event.key == pygame.K_TAB and (event.mod & pygame.KMOD_ALT):
+                self.wm.alt_tab_cycle()
+                return
+        if event.type == pygame.KEYUP:
+            if event.key == pygame.K_TAB or event.key in (pygame.K_LALT, pygame.K_RALT):
+                self.wm.alt_tab_activate()
+                return
 
     def _request_quit(self):
         self.running = False
@@ -432,40 +759,77 @@ class LionOS:
     # ------------------------------------------------------------------ draw
     def _draw(self):
         self._draw_wallpaper()
-        self._draw_icons()
+        self._draw_desktop_icons()
         self._draw_windows()
         self._draw_launcher()
         self._draw_power_menu()
+        self._draw_alt_tab()
         self._draw_context_menu()
         self._draw_taskbar()
         self._draw_toasts()
+        if self._shutting_down:
+            self._draw_power_fade("Shutting down…")
+        elif self._restarting:
+            self._draw_power_fade("Restarting…")
         if not self.booted:
             self._draw_boot()
         elif not self.logged_in:
             self._draw_login()
         pygame.display.flip()
 
-    def _draw_wallpaper(self):
+    def _draw_power_fade(self, label):
+        s = pygame.Surface((self.screen_w, self.screen_h), pygame.SRCALPHA)
+        s.fill((0, 0, 0, int(255 * self._power_fade)))
+        self.screen.blit(s, (0, 0))
+        if self._power_fade > 0.5:
+            font = self.get_font(30)
+            img = font.render(label, True, (255, 255, 255))
+            self.screen.blit(img, img.get_rect(center=(self.screen_w // 2, self.screen_h // 2)))
+
+    def _ensure_wallpaper(self):
+        key = (self.theme.name, self.theme.wallpaper_top, self.theme.wallpaper_bottom,
+               self.theme.accent, self.screen_w, self.screen_h)
+        if key == self._wallpaper_key and self._wallpaper_surf is not None:
+            return
+        surf = pygame.Surface((self.screen_w, self.screen_h))
         top = self.theme.wallpaper_top
         bottom = self.theme.wallpaper_bottom
         h = self.screen_h
-        for y in range(0, h, 4):
+        for y in range(0, h, 2):
             t = y / max(1, h)
             color = blend(top, bottom, t)
-            pygame.draw.line(self.screen, color, (0, y), (self.screen_w, y))
-        # subtle animated glow
+            pygame.draw.line(surf, color, (0, y), (self.screen_w, y))
+        self._wallpaper_surf = surf
+        self._wallpaper_key = key
+
+    def _draw_wallpaper(self):
+        self._ensure_wallpaper()
+        self.screen.blit(self._wallpaper_surf, (0, 0))
+        # animated glow (cheap: single translucent surface reused)
         cx = self.screen_w // 2
         cy = self.screen_h // 2
+        g = pygame.Surface((self.screen_w, self.screen_h), pygame.SRCALPHA)
         for i in range(3):
-            radius = int(180 + self._bg_shift * 20 + i * 90)
-            alpha = 10 - i * 3
-            s = pygame.Surface((self.screen_w, self.screen_h), pygame.SRCALPHA)
-            pygame.draw.circle(s, self.theme.accent + (alpha,), (cx, cy), radius, 1)
-            self.screen.blit(s, (0, 0))
+            radius = int(160 + (self._bg_shift % 1.0) * 60 + i * 80)
+            alpha = 8 - i * 2
+            pygame.draw.circle(g, self.theme.glow[:3] + (alpha,), (cx, cy), radius, 1)
+        self.screen.blit(g, (0, 0))
 
-    def _draw_icons(self):
-        """Desktop icons are kept minimal; the launcher is the primary app menu."""
-        pass
+    def _draw_desktop_icons(self):
+        if not self.logged_in:
+            return
+        for (label, app), rect in self._desktop_icon_rects():
+            cls = self.apps_registry.get(app)
+            glyph = cls.icon if cls else "◈"
+            hovered = rect.collidepoint(pygame.mouse.get_pos())
+            selected = self._desktop_sel == label
+            tile = pygame.Rect(rect.x, rect.y, rect.width, rect.height - 22)
+            draw_app_tile(self.screen, tile, glyph, self.theme,
+                          hovered=hovered, selected=selected)
+            font = self.get_font(14)
+            limg = font.render(label, True,
+                               self.theme.text if selected else self.theme.text_dim)
+            self.screen.blit(limg, limg.get_rect(midtop=(tile.centerx, tile.bottom + 6)))
 
     def _draw_windows(self):
         # draw from back to front
@@ -476,59 +840,61 @@ class LionOS:
         self.wm.draw_snap_preview(self.screen, self.theme)
 
     def _draw_window(self, win: Window):
-        if win.state == WINDOW_STATE_MAXIMIZED:
-            rect = win.rect
-        else:
-            rect = win.rect
-            # shadow
-            sh = pygame.Surface((rect.width + 12, rect.height + 12), pygame.SRCALPHA)
-            pygame.draw.rect(sh, self.theme.shadow[:3] + (120,), (6, 6, rect.width, rect.height),
-                             border_radius=12)
-            self.screen.blit(sh, (rect.x - 6, rect.y - 6))
+        rect = win.rect
+        focused = win is self.wm.focused
+        font = self.get_font(self.config.font_size)
 
-        # window body
-        body = pygame.Surface((rect.width, rect.height), pygame.SRCALPHA)
-        bg = self.theme.surface if len(self.theme.surface) == 3 else self.theme.surface
-        alpha = 246
-        bg_a = bg + (alpha,) if len(bg) == 3 else bg
-        pygame.draw.rect(body, bg_a, body.get_rect(), border_radius=12)
-        if win is self.wm.focused:
-            border = self.theme.accent + (60,) if len(self.theme.accent) == 3 else self.theme.accent
-            pygame.draw.rect(body, border, body.get_rect(), 1, border_radius=12)
+        # scale for open/close/minimize animations
+        scale = win.anim_scale
+        alpha = win.anim_alpha
+        if scale != 1.0:
+            w = max(1, int(rect.width * scale))
+            h = max(1, int(rect.height * scale))
+            sx = rect.x + (rect.width - w) // 2
+            sy = rect.y + (rect.height - h) // 2
+            scaled_rect = pygame.Rect(sx, sy, w, h)
         else:
-            pygame.draw.rect(body, (255, 255, 255, 30), body.get_rect(), 1, border_radius=12)
-        self.screen.blit(body, rect.topleft)
+            scaled_rect = rect
 
-        # titlebar
-        tr = win.titlebar_rect
-        tb = pygame.Surface((tr.width, TITLEBAR_H), pygame.SRCALPHA)
-        pygame.draw.rect(tb, (255, 255, 255, 14), tb.get_rect())
-        self.screen.blit(tb, tr.topleft)
-        font = pygame.font.Font(None, self.config.font_size)
-        active = win is self.wm.focused
-        tcol = self.theme.text if active else self.theme.text_dim
-        title_img = font.render(win.title or win.app.name, True, tcol)
-        self.screen.blit(title_img, (tr.x + 12, tr.centery - title_img.get_height() // 2))
-        # window buttons
+        win.ensure_chrome(self.theme, focused, font, self.config.font_size)
+
+        shadow = win._chrome.get("shadow")
+        if shadow:
+            self.screen.blit(shadow, (scaled_rect.x - 12, scaled_rect.y - 12))
+        body = win._chrome.get("body")
+        if body:
+            self.screen.blit(body, scaled_rect.topleft)
+        titlebar = win._chrome.get("titlebar")
+        if titlebar:
+            self.screen.blit(titlebar, (scaled_rect.x, scaled_rect.y))
+
+        # window buttons (drawn per-frame for hover states)
+        tr = pygame.Rect(scaled_rect.x, scaled_rect.y, scaled_rect.width, TITLEBAR_H)
         self._draw_window_buttons(win, tr)
 
         # content
-        cr = win.content_rect
-        if cr.width > 0 and cr.height > 0:
+        cr = pygame.Rect(scaled_rect.x, scaled_rect.y + TITLEBAR_H,
+                         scaled_rect.width, max(0, scaled_rect.height - TITLEBAR_H))
+        if cr.width > 0 and cr.height > 0 and win.app:
             clip = pygame.Rect(cr)
             old = self.screen.get_clip()
             self.screen.set_clip(clip)
-            if win.app:
-                try:
-                    win.app.draw(self.screen, cr)
-                except Exception as e:
-                    import traceback
-                    traceback.print_exc()
-                    self._draw_error_screen(cr, e)
+            try:
+                win.app.draw(self.screen, cr)
+            except Exception as e:
+                import traceback
+                traceback.print_exc()
+                self._draw_error_screen(cr, e)
             self.screen.set_clip(old)
 
+        # apply fade for close/minimize
+        if alpha < 255:
+            fade = pygame.Surface(scaled_rect.size, pygame.SRCALPHA)
+            fade.fill((0, 0, 0, 255 - alpha))
+            self.screen.blit(fade, scaled_rect.topleft)
+
     def _draw_error_screen(self, rect, error):
-        font = pygame.font.Font(None, 18)
+        font = self.get_font(18)
         s = pygame.Surface(rect.size, pygame.SRCALPHA)
         s.fill((40, 20, 20, 220))
         img = font.render("Application error", True, (255, 200, 200))
@@ -538,18 +904,19 @@ class LionOS:
         self.screen.blit(s, rect.topleft)
 
     def _draw_window_buttons(self, win: Window, tr):
-        font = pygame.font.Font(None, 16)
+        font = self.get_font(16)
         b = 16
         right = tr.right - 8
         cy = tr.centery
+        mouse = pygame.mouse.get_pos()
         # minimize
         min_rect = pygame.Rect(right - 2 * b - 8, cy - b // 2, b, b)
-        if min_rect.collidepoint(pygame.mouse.get_pos()):
+        if min_rect.collidepoint(mouse):
             pygame.draw.rect(self.screen, self.theme.hover[:3] if len(self.theme.hover) == 3 else self.theme.hover, min_rect, border_radius=4)
         pygame.draw.line(self.screen, self.theme.text_dim, (min_rect.centerx - 4, min_rect.centery), (min_rect.centerx + 4, min_rect.centery), 2)
         # maximize
         max_rect = pygame.Rect(right - 3 * b - 8, cy - b // 2, b, b)
-        if max_rect.collidepoint(pygame.mouse.get_pos()):
+        if max_rect.collidepoint(mouse):
             pygame.draw.rect(self.screen, self.theme.hover[:3] if len(self.theme.hover) == 3 else self.theme.hover, max_rect, border_radius=4)
         if win.state == WINDOW_STATE_MAXIMIZED:
             pygame.draw.rect(self.screen, self.theme.text_dim, (max_rect.centerx - 4, max_rect.centery - 4, 8, 8), 1)
@@ -557,12 +924,12 @@ class LionOS:
             pygame.draw.rect(self.screen, self.theme.text_dim, (max_rect.centerx - 4, max_rect.centery - 4, 8, 8), 1)
         # close
         close_rect = pygame.Rect(right - b, cy - b // 2, b, b)
-        if close_rect.collidepoint(pygame.mouse.get_pos()):
+        if close_rect.collidepoint(mouse):
             pygame.draw.rect(self.screen, self.theme.danger[:3], close_rect, border_radius=4)
-        pygame.draw.line(self.screen, self.theme.text if close_rect.collidepoint(pygame.mouse.get_pos()) else self.theme.text_dim,
+        pygame.draw.line(self.screen, self.theme.text if close_rect.collidepoint(mouse) else self.theme.text_dim,
                          (close_rect.centerx - 4, close_rect.centery - 4),
                          (close_rect.centerx + 4, close_rect.centery + 4), 2)
-        pygame.draw.line(self.screen, self.theme.text if close_rect.collidepoint(pygame.mouse.get_pos()) else self.theme.text_dim,
+        pygame.draw.line(self.screen, self.theme.text if close_rect.collidepoint(mouse) else self.theme.text_dim,
                          (close_rect.centerx - 4, close_rect.centery + 4),
                          (close_rect.centerx + 4, close_rect.centery - 4), 2)
 
@@ -579,8 +946,11 @@ class LionOS:
         # start button
         start_r = pygame.Rect(10, tb.y + 6, 34, 34)
         self._draw_start_button(start_r)
+        # power menu toggle
+        power_r = pygame.Rect(48, tb.y + 6, 24, 24)
+        pygame.draw.circle(self.screen, self.theme.text_dim, power_r.center, 9, 2)
         # running apps
-        x = 52
+        x = 82
         for inst in self.instances:
             if inst.closed:
                 continue
@@ -592,7 +962,7 @@ class LionOS:
             elif focused:
                 pygame.draw.rect(self.screen, self.theme.taskbar_active[:3] + (40,), item, border_radius=6)
             pygame.draw.rect(self.screen, self.theme.taskbar_active[:3] if focused else (100, 100, 120), (item.x + 14, item.bottom - 3, 16, 3), border_radius=2)
-            font = pygame.font.Font(None, self.config.font_size)
+            font = self.get_font(self.config.font_size)
             img = font.render(app.icon, True, self.theme.text)
             self.screen.blit(img, img.get_rect(center=item.center))
             # tooltip
@@ -607,7 +977,7 @@ class LionOS:
                 break
 
         # clock
-        clock_font = pygame.font.Font(None, 18)
+        clock_font = self.get_font(18)
         now = time.localtime()
         if self.config.clock_24h:
             timestr = time.strftime("%H:%M", now)
@@ -637,41 +1007,73 @@ class LionOS:
         dim.fill((10, 10, 18, 180))
         self.screen.blit(dim, (0, 0))
         # title
-        font = pygame.font.Font(None, 30)
+        font = self.get_font(30)
         title = font.render("Lion-OS Launcher", True, self.theme.text)
-        self.screen.blit(title, title.get_rect(midtop=(self.screen_w // 2, 60)))
+        self.screen.blit(title, title.get_rect(midtop=(self.screen_w // 2, 50)))
         # search box
-        font = pygame.font.Font(None, self.config.font_size)
-        search_r = pygame.Rect(self.screen_w // 2 - 200, 100, 400, 36)
+        font = self.get_font(self.config.font_size)
+        search_r = pygame.Rect(self.screen_w // 2 - 200, 95, 400, 36)
         pygame.draw.rect(self.screen, self.theme.surface, search_r, border_radius=10)
         pygame.draw.rect(self.screen, self.theme.accent, search_r, 1, border_radius=10)
         txt = self.launcher_search or "Search apps..."
         col = self.theme.text if self.launcher_search else self.theme.text_dim
         img = font.render(txt, True, col)
         self.screen.blit(img, (search_r.x + 12, search_r.centery - img.get_height() // 2))
+        # category tabs
+        self._draw_launcher_tabs()
+        # recent apps row
+        self._draw_launcher_recent()
         # results grid
         results = self._launcher_results()
         if results:
             cols = 8
             size = 96
             start_x = (self.screen_w - cols * size) // 2
+            sel = getattr(self, "_launcher_idx", 0) % len(results)
             for i, app in enumerate(results):
                 cx = start_x + (i % cols) * size
-                cy = 170 + (i // cols) * size
+                cy = 210 + (i // cols) * size
                 tile = pygame.Rect(cx, cy, size, size)
-                if tile.collidepoint(pygame.mouse.get_pos()):
-                    pygame.draw.rect(self.screen, self.theme.hover[:3] if len(self.theme.hover) == 3 else self.theme.hover, tile, border_radius=12)
-                ic = pygame.Rect(cx + 20, cy + 16, 56, 56)
-                pygame.draw.rect(self.screen, self.theme.icon_bg[:3] + (40,), ic, border_radius=14)
-                ifont = pygame.font.Font(None, 34)
-                icimg = ifont.render(app.icon, True, self.theme.accent)
-                self.screen.blit(icimg, icimg.get_rect(center=ic.center))
-                lfont = pygame.font.Font(None, 15)
+                ic = pygame.Rect(cx + 18, cy + 12, 60, 60)
+                hovered = tile.collidepoint(pygame.mouse.get_pos())
+                draw_app_tile(self.screen, ic, app.icon, self.theme,
+                              hovered=hovered, selected=(i == sel))
+                lfont = self.get_font(15)
                 limg = lfont.render(app.name, True, self.theme.text)
-                self.screen.blit(limg, limg.get_rect(midtop=(tile.centerx, ic.bottom + 6)))
+                self.screen.blit(limg, limg.get_rect(midtop=(tile.centerx, ic.bottom + 8)))
         else:
             img = font.render("No apps match your search.", True, self.theme.text_dim)
             self.screen.blit(img, img.get_rect(center=(self.screen_w // 2, self.screen_h // 2)))
+
+    def _draw_launcher_tabs(self):
+        cats = self._launcher_categories()
+        fx = self.get_font(16)
+        tx = self.screen_w // 2 - 200
+        for c in cats:
+            w = fx.size(c)[0] + 24
+            r = pygame.Rect(tx, 148, w, 30)
+            active = c == self.launcher_category
+            if active:
+                pygame.draw.rect(self.screen, self.theme.active[:3] if len(self.theme.active) == 3 else self.theme.active,
+                                 r, border_radius=8)
+            img = fx.render(c, True, self.theme.accent if active else self.theme.text_dim)
+            self.screen.blit(img, img.get_rect(center=r.center))
+            tx += w + 6
+
+    def _draw_launcher_recent(self):
+        mru = [n for n in self.config.mru_apps if n in self.apps_registry.all()]
+        if not mru:
+            return
+        font = self.get_font(16)
+        label = font.render("Recent", True, self.theme.text_dim)
+        self.screen.blit(label, (self.screen_w // 2 - 200, 190))
+        x = self.screen_w // 2 - 200
+        for name in mru[:6]:
+            cls = self.apps_registry.get(name)
+            tile = pygame.Rect(x, 212, 40, 40)
+            draw_app_tile(self.screen, tile, cls.icon, self.theme,
+                          hovered=tile.collidepoint(pygame.mouse.get_pos()))
+            x += 46
 
     def _draw_power_menu(self):
         if not self.power_menu_open:
@@ -679,9 +1081,54 @@ class LionOS:
         dim = pygame.Surface((self.screen_w, self.screen_h), pygame.SRCALPHA)
         dim.fill((10, 10, 18, 180))
         self.screen.blit(dim, (0, 0))
-        font = pygame.font.Font(None, 28)
+        panel = self._power_menu_panel()
+        draw_glass_panel(self.screen, panel, self.theme, radius=16)
+        font = self.get_font(28)
         title = font.render("Power", True, self.theme.text)
-        self.screen.blit(title, title.get_rect(midtop=(self.screen_w // 2, 120)))
+        self.screen.blit(title, title.get_rect(midtop=(panel.centerx, panel.y + 16)))
+        for i, (key, label, icon) in enumerate(self._power_menu_actions()):
+            r = pygame.Rect(panel.x + 20, panel.y + 60 + i * 56, panel.width - 40, 44)
+            hovered = r.collidepoint(pygame.mouse.get_pos())
+            if hovered:
+                pygame.draw.rect(self.screen, self.theme.hover[:3] if len(self.theme.hover) == 3 else self.theme.hover,
+                                 r, border_radius=10)
+            ifont = self.get_font(22)
+            iimg = ifont.render(icon, True, self.theme.text)
+            self.screen.blit(iimg, iimg.get_rect(midleft=(r.x + 14, r.centery)))
+            limg = font.render(label, True, self.theme.text)
+            self.screen.blit(limg, limg.get_rect(midleft=(r.x + 52, r.centery)))
+
+    def _draw_alt_tab(self):
+        if not self.wm.alt_tab_active:
+            return
+        order = self.wm._alt_tab_order
+        if not order:
+            return
+        dim = pygame.Surface((self.screen_w, self.screen_h), pygame.SRCALPHA)
+        dim.fill((10, 10, 18, 120))
+        self.screen.blit(dim, (0, 0))
+        n = len(order)
+        card_w, card_h = 140, 96
+        total = n * (card_w + 12) - 12
+        start_x = (self.screen_w - total) // 2
+        for i, win in enumerate(order):
+            x = start_x + i * (card_w + 12)
+            y = self.screen_h // 2 - card_h // 2
+            r = pygame.Rect(x, y, card_w, card_h)
+            active = i == self.wm._alt_tab_idx
+            draw_glass_panel(self.screen, r, self.theme,
+                             radius=12, border=active)
+            if active:
+                pygame.draw.rect(self.screen, self.theme.accent, r, 2, border_radius=12)
+            font = self.get_font(18)
+            img = font.render(win.app.icon if win.app else "◈", True, self.theme.accent)
+            self.screen.blit(img, img.get_rect(center=(r.centerx, r.y + 30)))
+            tfont = self.get_font(15)
+            t = win.title or (win.app.name if win.app else "")
+            if tfont.size(t)[0] > card_w - 12:
+                t = t[:12] + "…"
+            timg = tfont.render(t, True, self.theme.text)
+            self.screen.blit(timg, timg.get_rect(midtop=(r.centerx, r.y + 58)))
 
     def _draw_context_menu(self):
         if self.context_menu:
@@ -695,17 +1142,22 @@ class LionOS:
             y -= 76
 
     def _draw_boot(self):
-        # black boot screen with progress
+        # black boot screen with progress + shimmer
         self.screen.fill((8, 8, 12))
-        font = pygame.font.Font(None, 40)
+        font = self.get_font(40)
         logo = font.render("🦁 Lion-OS", True, self.theme.accent)
-        self.screen.blit(logo, logo.get_rect(midtop=(self.screen_w // 2, self.screen_h // 2 - 100)))
+        self.screen.blit(logo, logo.get_rect(midtop=(self.screen_w // 2, self.screen_h // 2 - 110)))
         # progress bar
         bar_r = pygame.Rect(self.screen_w // 2 - 150, self.screen_h // 2 + 10, 300, 8)
         pygame.draw.rect(self.screen, (60, 60, 70), bar_r, border_radius=4)
-        pygame.draw.rect(self.screen, self.theme.accent, (bar_r.x, bar_r.y, int(bar_r.width * min(1, self._boot_progress / 100)), bar_r.height), border_radius=4)
+        fill_w = int(bar_r.width * min(1, self._boot_progress / 100))
+        if fill_w > 0:
+            pygame.draw.rect(self.screen, self.theme.accent, (bar_r.x, bar_r.y, fill_w, bar_r.height), border_radius=4)
+            # shimmer sweep
+            shx = bar_r.x + int((self._boot_glow % 1.0) * bar_r.width)
+            pygame.draw.rect(self.screen, (255, 255, 255), (shx, bar_r.y, 40, bar_r.height), border_radius=4)
         # boot lines
-        lfont = pygame.font.Font(None, 16)
+        lfont = self.get_font(16)
         for i, (line, important) in enumerate(BOOT_LINES[:self._boot_lines_done + 1]):
             col = self.theme.accent if important else (150, 150, 165)
             img = lfont.render(line, True, col)
@@ -716,33 +1168,35 @@ class LionOS:
         dim.fill((8, 8, 14, 200))
         self.screen.blit(dim, (0, 0))
         cx = self.screen_w // 2
+        shake = int(self._login_shake * 12)
         # clock
-        tfont = pygame.font.Font(None, 60)
+        tfont = self.get_font(60)
         now = time.localtime()
         timestr = time.strftime("%H:%M", now) if self.config.clock_24h else time.strftime("%I:%M %p", now).lstrip("0")
         cimg = tfont.render(timestr, True, (255, 255, 255))
         self.screen.blit(cimg, cimg.get_rect(center=(cx, self.screen_h // 2 - 120)))
-        dfont = pygame.font.Font(None, 22)
+        dfont = self.get_font(22)
         dimg = dfont.render(time.strftime("%A, %B %d, %Y", now), True, (220, 220, 230))
         self.screen.blit(dimg, dimg.get_rect(center=(cx, self.screen_h // 2 - 70)))
-        # user icon
-        pygame.draw.circle(self.screen, self.theme.accent, (cx, self.screen_h // 2 - 10), 34)
-        pygame.draw.circle(self.screen, (255, 255, 255), (cx, self.screen_h // 2 - 18), 12)
-        ufont = pygame.font.Font(None, 24)
+        # user icon with accent ring
+        pygame.draw.circle(self.screen, self.theme.accent, (cx, self.screen_h // 2 - 10), 40)
+        pygame.draw.circle(self.screen, self.theme.surface, (cx, self.screen_h // 2 - 10), 34)
+        pygame.draw.circle(self.screen, self.theme.text, (cx, self.screen_h // 2 - 10), 14)
+        ufont = self.get_font(24)
         uimg = ufont.render(self.config.username, True, (255, 255, 255))
         self.screen.blit(uimg, uimg.get_rect(center=(cx, self.screen_h // 2 + 44)))
-        # password box
-        pw_r = pygame.Rect(cx - 140, self.screen_h // 2 + 70, 280, 40)
+        # password box (shakes on error)
+        pw_r = pygame.Rect(cx - 140 + shake, self.screen_h // 2 + 70, 280, 40)
         pygame.draw.rect(self.screen, (255, 255, 255, 40), pw_r, border_radius=10)
         pygame.draw.rect(self.screen, self.theme.accent if self._login_attempt % 2 == 0 else (255, 255, 255, 80), pw_r, 1, border_radius=10)
-        pfont = pygame.font.Font(None, 22)
+        pfont = self.get_font(22)
         pw_txt = "*" * len(self._login_pw) if self._login_pw else "Password"
         pimg = pfont.render(pw_txt, True, (230, 230, 240) if self._login_pw else (170, 170, 185))
         self.screen.blit(pimg, pimg.get_rect(center=pw_r.center))
         if self._login_error:
             eimg = pfont.render(self._login_error, True, (255, 140, 140))
             self.screen.blit(eimg, eimg.get_rect(center=(cx, pw_r.bottom + 22)))
-        hint = pygame.font.Font(None, 15).render("Press Enter to log in", True, (170, 170, 185))
+        hint = self.get_font(15).render("Press Enter to log in", True, (170, 170, 185))
         self.screen.blit(hint, hint.get_rect(center=(cx, pw_r.bottom + 48)))
 
 

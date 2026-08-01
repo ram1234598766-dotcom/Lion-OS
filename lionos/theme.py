@@ -1,41 +1,93 @@
-"""Theme system for Lion-OS — dark/light glassmorphism palettes."""
+"""Theme system for Lion-OS — dark/light glassmorphism palettes.
 
-from dataclasses import dataclass, field
-from typing import Dict, List
+Themes carry the full palette used across the desktop. An extra set of
+``titlebar_*`` / ``icon_grad*`` / ``glow`` fields drives the richer chrome
+introduced in the identity pass. ``Theme.interpolate`` blends two themes
+live so the kernel can animate a theme switch.
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass, field, fields
+from typing import Dict, List, Tuple
+
+Color = Tuple[int, int, int]
+RGBA = Tuple[int, int, int, int]
 
 
 @dataclass
 class Theme:
     name: str
     is_dark: bool
-    bg: tuple
-    bg_alt: tuple
-    surface: tuple
-    surface_alt: tuple
-    glass: tuple            # translucent surface color
-    glass_border: tuple
-    text: tuple
-    text_dim: tuple
-    accent: tuple
-    accent_alt: tuple
-    danger: tuple
-    success: tuple
-    warn: tuple
-    info: tuple
-    taskbar: tuple
-    taskbar_active: tuple
-    hover: tuple
-    active: tuple
-    scrollbar: tuple
-    shadow: tuple
-    selection: tuple
-    wallpaper_top: tuple
-    wallpaper_bottom: tuple
-    icon_bg: tuple
+    bg: Color
+    bg_alt: Color
+    surface: Color
+    surface_alt: Color
+    glass: RGBA
+    glass_border: RGBA
+    text: Color
+    text_dim: Color
+    accent: Color
+    accent_alt: Color
+    danger: Color
+    success: Color
+    warn: Color
+    info: Color
+    taskbar: RGBA
+    taskbar_active: Color
+    hover: RGBA
+    active: RGBA
+    scrollbar: Color
+    shadow: RGBA
+    selection: RGBA
+    wallpaper_top: Color
+    wallpaper_bottom: Color
+    icon_bg: Color
+    # --- identity-pass extras (default to derived values in __post_init__) ---
+    titlebar_top: Color = None
+    titlebar_bottom: Color = None
+    glow: Color = None
+    accent2: Color = None
+    icon_grad1: Color = None
+    icon_grad2: Color = None
+
+    def __post_init__(self):
+        if self.titlebar_top is None:
+            self.titlebar_top = self.surface_alt
+        if self.titlebar_bottom is None:
+            self.titlebar_bottom = self.surface
+        if self.glow is None:
+            self.glow = self.accent
+        if self.accent2 is None:
+            self.accent2 = self.accent_alt
+        if self.icon_grad1 is None:
+            self.icon_grad1 = self.accent
+        if self.icon_grad2 is None:
+            self.icon_grad2 = self.accent2
 
     @property
-    def wallpaper(self) -> "List[tuple]":
+    def wallpaper(self) -> List[Color]:
         return [self.wallpaper_top, self.wallpaper_bottom]
+
+    # -- helpers --------------------------------------------------------------
+    def as_dict(self) -> dict:
+        """All fields that are plain colors (used for interpolation)."""
+        skip = {"name", "is_dark"}
+        return {f.name: getattr(self, f.name) for f in fields(self) if f.name not in skip}
+
+    def interpolate(self, other: "Theme", t: float) -> "Theme":
+        """Return a theme blended between self (t=0) and other (t=1)."""
+        t = max(0.0, min(1.0, t))
+        data = self.as_dict()
+        data["is_dark"] = other.is_dark if t >= 0.5 else self.is_dark
+        for k, a in data.items():
+            if k == "is_dark":
+                continue
+            b = getattr(other, k)
+            if isinstance(a, tuple) and isinstance(b, tuple) and len(a) == len(b):
+                data[k] = blend(a, b, t)
+        data["name"] = other.name if t >= 0.5 else self.name
+        return Theme(**data)
 
 
 DARK = Theme(
@@ -65,6 +117,9 @@ DARK = Theme(
     wallpaper_top=(24, 16, 48),
     wallpaper_bottom=(10, 10, 20),
     icon_bg=(247, 148, 0),
+    titlebar_top=(44, 40, 58),
+    titlebar_bottom=(28, 28, 38),
+    glow=(247, 148, 0),
 )
 
 LIGHT = Theme(
@@ -94,6 +149,9 @@ LIGHT = Theme(
     wallpaper_top=(226, 214, 235),
     wallpaper_bottom=(190, 198, 220),
     icon_bg=(224, 122, 0),
+    titlebar_top=(250, 250, 253),
+    titlebar_bottom=(240, 241, 247),
+    glow=(224, 122, 0),
 )
 
 OCEAN = Theme(
@@ -123,6 +181,9 @@ OCEAN = Theme(
     wallpaper_top=(8, 44, 70),
     wallpaper_bottom=(6, 14, 26),
     icon_bg=(0, 190, 255),
+    titlebar_top=(26, 70, 100),
+    titlebar_bottom=(18, 36, 54),
+    glow=(0, 190, 255),
 )
 
 FOREST = Theme(
@@ -152,6 +213,9 @@ FOREST = Theme(
     wallpaper_top=(26, 56, 34),
     wallpaper_bottom=(10, 18, 12),
     icon_bg=(64, 200, 96),
+    titlebar_top=(46, 84, 52),
+    titlebar_bottom=(26, 40, 28),
+    glow=(64, 200, 96),
 )
 
 VIOLET = Theme(
@@ -181,6 +245,9 @@ VIOLET = Theme(
     wallpaper_top=(50, 24, 88),
     wallpaper_bottom=(18, 12, 32),
     icon_bg=(167, 94, 255),
+    titlebar_top=(72, 48, 116),
+    titlebar_bottom=(38, 30, 60),
+    glow=(167, 94, 255),
 )
 
 ROSE = Theme(
@@ -210,6 +277,73 @@ ROSE = Theme(
     wallpaper_top=(255, 226, 240),
     wallpaper_bottom=(238, 214, 228),
     icon_bg=(236, 72, 138),
+    titlebar_top=(255, 240, 246),
+    titlebar_bottom=(248, 236, 242),
+    glow=(236, 72, 138),
+)
+
+SUNSET = Theme(
+    name="Sunset",
+    is_dark=True,
+    bg=(30, 14, 24),
+    bg_alt=(40, 20, 32),
+    surface=(52, 26, 40),
+    surface_alt=(70, 36, 54),
+    glass=(56, 28, 44, 220),
+    glass_border=(255, 180, 150, 40),
+    text=(248, 236, 236),
+    text_dim=(180, 150, 158),
+    accent=(255, 120, 60),
+    accent_alt=(255, 170, 90),
+    danger=(255, 80, 80),
+    success=(80, 220, 140),
+    warn=(255, 205, 80),
+    info=(120, 160, 255),
+    taskbar=(40, 18, 30, 235),
+    taskbar_active=(255, 120, 60),
+    hover=(255, 255, 255, 20),
+    active=(255, 255, 255, 32),
+    scrollbar=(110, 70, 90),
+    shadow=(20, 0, 10, 150),
+    selection=(255, 120, 60, 70),
+    wallpaper_top=(80, 20, 50),
+    wallpaper_bottom=(26, 10, 24),
+    icon_bg=(255, 120, 60),
+    titlebar_top=(96, 40, 62),
+    titlebar_bottom=(50, 24, 38),
+    glow=(255, 120, 60),
+)
+
+MIDNIGHT = Theme(
+    name="Midnight",
+    is_dark=True,
+    bg=(6, 10, 20),
+    bg_alt=(12, 18, 32),
+    surface=(16, 24, 42),
+    surface_alt=(26, 38, 62),
+    glass=(14, 22, 40, 220),
+    glass_border=(140, 170, 255, 40),
+    text=(224, 232, 248),
+    text_dim=(140, 152, 178),
+    accent=(96, 130, 255),
+    accent_alt=(150, 175, 255),
+    danger=(255, 90, 100),
+    success=(70, 215, 150),
+    warn=(250, 210, 90),
+    info=(90, 160, 255),
+    taskbar=(10, 16, 30, 240),
+    taskbar_active=(96, 130, 255),
+    hover=(255, 255, 255, 18),
+    active=(255, 255, 255, 30),
+    scrollbar=(60, 80, 120),
+    shadow=(0, 0, 10, 160),
+    selection=(96, 130, 255, 70),
+    wallpaper_top=(12, 24, 56),
+    wallpaper_bottom=(4, 6, 16),
+    icon_bg=(96, 130, 255),
+    titlebar_top=(24, 40, 72),
+    titlebar_bottom=(14, 22, 40),
+    glow=(96, 130, 255),
 )
 
 THEMES: Dict[str, Theme] = {
@@ -219,12 +353,18 @@ THEMES: Dict[str, Theme] = {
     "forest": FOREST,
     "violet": VIOLET,
     "rose": ROSE,
+    "sunset": SUNSET,
+    "midnight": MIDNIGHT,
 }
 
 THEME_NAMES = list(THEMES.keys())
 
 
 def blend(c1: tuple, c2: tuple, t: float) -> tuple:
-    """Linearly interpolate two RGBA/RGB colors."""
+    """Linearly interpolate two RGBA/RGB colors of the same length."""
     t = max(0.0, min(1.0, t))
-    return tuple(int(a + (b - a) * t) for a, b in zip(c1[:3], c2[:3])) + (c1[3:] and c1[3] or c2[3:])
+    n = min(len(c1), len(c2))
+    if n == 0:
+        return c1 or c2
+    out = tuple(int(a + (b - a) * t) for a, b in zip(c1[:n], c2[:n]))
+    return out + c1[n:] if len(c1) > n else out

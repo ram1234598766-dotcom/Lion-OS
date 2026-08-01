@@ -2,9 +2,7 @@
 
 from __future__ import annotations
 
-import json
 import os
-import time
 
 import pygame
 
@@ -25,36 +23,107 @@ class NotesApp(App):
         super().__init__(os, window)
         self.notes = {}            # title -> content
         self.order = []            # list of titles
+        self._files = {}           # title -> absolute path of its .txt file
         self.selected = None
         self.edit_title = ""
         self.edit_content = ""
         self.scroll = 0
         self._blink = 0.0
+        self._dirty_since_save = False
+        self._dirty_accum = 0.0
         self._load()
         if self.order:
             self.selected = self.order[0]
             self._load_editor()
 
-    def _path(self):
-        d = os.path.join(os.path.expanduser("~"), ".lionos", "notes.json")
-        return d
+    def _notes_dir(self):
+        return os.path.join(os.path.expanduser("~"), ".lionos", "notes")
+
+    def _slugify(self, text):
+        parts = []
+        last_alnum = False
+        for c in text.lower():
+            if c.isalnum():
+                parts.append(c)
+                last_alnum = True
+            elif last_alnum:
+                parts.append("-")
+                last_alnum = False
+        return "".join(parts).strip("-") or "untitled"
+
+    def _title_for(self, content):
+        for ln in content.split("\n"):
+            t = ln.strip()
+            if t:
+                return t[:40]
+        return ""
+
+    def _file_for(self, title):
+        return os.path.join(self._notes_dir(), self._slugify(title) + ".txt")
+
+    def _current_title(self):
+        t = self._title_for(self.edit_content)
+        return t or (self.selected or "")
 
     def _load(self):
+        self.notes = {}
+        self.order = []
+        self._files = {}
+        d = self._notes_dir()
         try:
-            with open(self._path(), "r", encoding="utf-8") as f:
-                data = json.load(f)
-            self.notes = data.get("notes", {})
-            self.order = data.get("order", list(self.notes.keys()))
-            if not self.order:
-                self.order = list(self.notes.keys())
-        except (OSError, json.JSONDecodeError):
-            self.notes = {}
-            self.order = []
+            if not os.path.isdir(d):
+                return
+            entries = []
+            for fn in os.listdir(d):
+                if not fn.endswith(".txt"):
+                    continue
+                p = os.path.join(d, fn)
+                try:
+                    mtime = os.path.getmtime(p)
+                except OSError:
+                    continue
+                entries.append((mtime, fn, p))
+            entries.sort(reverse=True)  # most recently edited first
+            for _, fn, p in entries:
+                try:
+                    with open(p, "r", encoding="utf-8") as f:
+                        content = f.read()
+                except OSError:
+                    continue
+                title = self._title_for(content) or fn[:-4]
+                base, n = title, 2
+                while title in self.notes:
+                    title = f"{base} ({n})"
+                    n += 1
+                self.notes[title] = content
+                self._files[title] = p
+                self.order.append(title)
+        except OSError:
+            pass
 
-    def _save(self):
-        os.makedirs(os.path.dirname(self._path()), exist_ok=True)
-        with open(self._path(), "w", encoding="utf-8") as f:
-            json.dump({"notes": self.notes, "order": self.order}, f, indent=2)
+    def _sync_title(self):
+        """Re-derive the note title from the first non-empty line of content."""
+        if not self.selected:
+            return
+        new_title = self._title_for(self.edit_content) or self.selected
+        if new_title == self.selected:
+            return
+        base, n = new_title, 2
+        while new_title in self.notes and new_title != self.selected:
+            new_title = f"{base} ({n})"
+            n += 1
+        old_file = self._files.pop(self.selected, None)
+        self.notes[new_title] = self.notes.pop(self.selected)
+        self._files[new_title] = old_file
+        if self.selected in self.order:
+            self.order[self.order.index(self.selected)] = new_title
+        self.selected = new_title
+        self.edit_title = new_title
+
+    def _mark_dirty(self):
+        self._dirty_since_save = True
+        self._dirty_accum = 0.0
+        self.redraw()
 
     def _load_editor(self):
         if self.selected and self.selected in self.notes:
@@ -63,6 +132,8 @@ class NotesApp(App):
         else:
             self.edit_title = ""
             self.edit_content = ""
+        self._dirty_since_save = False
+        self._dirty_accum = 0.0
 
     def handle_event(self, event, local_pos):
         if event.type == pygame.KEYDOWN:
@@ -73,19 +144,23 @@ class NotesApp(App):
             if event.key == pygame.K_BACKSPACE and self._in_content(local_pos):
                 if self.edit_content:
                     self.edit_content = self.edit_content[:-1]
-                    self.redraw()
+                    self._sync_title()
+                    self._mark_dirty()
                     return True
             if event.unicode and event.unicode.isprintable() and self._in_content(local_pos):
                 self.edit_content += event.unicode
-                self.redraw()
+                self._sync_title()
+                self._mark_dirty()
                 return True
             if event.unicode and event.unicode == " " and self._in_content(local_pos):
                 self.edit_content += " "
-                self.redraw()
+                self._sync_title()
+                self._mark_dirty()
                 return True
             if event.key == pygame.K_RETURN and self._in_content(local_pos):
                 self.edit_content += "\n"
-                self.redraw()
+                self._sync_title()
+                self._mark_dirty()
                 return True
         if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
             # sidebar list handled via ListBox-like manual
@@ -146,32 +221,62 @@ class NotesApp(App):
         self.notes[title] = ""
         self.order.insert(0, title)
         self.selected = title
+        self._files[title] = None
         self._load_editor()
-        self._save()
         self.redraw()
 
     def _delete_note(self):
         if self.selected and self.selected in self.notes:
+            f = self._files.pop(self.selected, None)
+            if f:
+                try:
+                    os.remove(f)
+                except OSError:
+                    pass
             del self.notes[self.selected]
             if self.selected in self.order:
                 self.order.remove(self.selected)
             self.selected = self.order[0] if self.order else None
             self._load_editor()
-            self._save()
             self.redraw()
 
     def _save_current(self):
-        if self.selected and self.selected in self.notes:
-            self.notes[self.selected] = self.edit_content
-            self._save()
+        if self.selected is None:
+            return
+        self._sync_title()
+        self.notes[self.selected] = self.edit_content
+        old_file = self._files.get(self.selected)
+        if not self.edit_content.strip() and old_file is None:
+            self._dirty_since_save = False
+            return
+        d = self._notes_dir()
+        os.makedirs(d, exist_ok=True)
+        new_file = self._file_for(self.selected)
+        if old_file and os.path.abspath(old_file) != os.path.abspath(new_file):
+            try:
+                os.remove(old_file)
+            except OSError:
+                pass
+        with open(new_file, "w", encoding="utf-8") as f:
+            f.write(self.edit_content)
+        self._files[self.selected] = new_file
+        self._dirty_since_save = False
 
     def _max_scroll(self):
         font = pygame.font.Font(None, self.os.config.font_size)
         lh = font.get_height() + 6
         return max(0, len(self.edit_content.split("\n")) * lh - self._content_rect().height + 30)
 
+    def on_close(self):
+        self._save_current()
+
     def update(self, dt):
         self._blink += dt
+        if self._dirty_since_save:
+            self._dirty_accum += dt
+            if self._dirty_accum >= 1.0:
+                self._dirty_accum = 0.0
+                self._save_current()
 
     def draw(self, surface, rect):
         self.rect = rect
@@ -202,9 +307,11 @@ class NotesApp(App):
         rounded_rect(surface, cr, 10, self.theme.surface)
         pygame.draw.rect(surface, self.theme.glass_border[:3] if len(self.theme.glass_border) == 4 else self.theme.glass_border, cr, 1, border_radius=10)
         # title display
+        ttitle = self._current_title()
+        self.set_title(ttitle or self.name)
+        display = ttitle or "No note selected"
         tfont = pygame.font.Font(None, self.os.config.font_size + 4)
-        ttitle = self.selected or "No note selected"
-        timg = tfont.render(ttitle, True, self.theme.accent)
+        timg = tfont.render(display, True, self.theme.accent)
         surface.blit(timg, (cr.x + 12, cr.y + 10))
         # content
         clip = pygame.Rect(cr.x + 4, cr.y + 44, cr.width - 16, cr.height - 52)

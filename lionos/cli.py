@@ -7,7 +7,8 @@ Run the OS::
 
 Flags:
     --reset        reset saved configuration
-    --theme NAME   boot with a specific theme (dark, light, ocean, forest, violet, rose)
+    --theme NAME   boot with a specific theme (dark, light, ocean, forest, violet, rose,
+                   sunset, midnight)
     --fullscreen   boot fullscreen
     --windowed     boot in a window
     --headless     run without rendering (smoke test mode)
@@ -27,7 +28,8 @@ def build_parser() -> argparse.ArgumentParser:
         description="Lion-OS — a graphical desktop OS that runs inside Python.",
     )
     p.add_argument("--reset", action="store_true", help="Reset saved configuration")
-    p.add_argument("--theme", choices=["dark", "light", "ocean", "forest", "violet", "rose"],
+    p.add_argument("--theme", choices=["dark", "light", "ocean", "forest", "violet", "rose",
+                                       "sunset", "midnight"],
                    help="Boot with a specific theme")
     p.add_argument("--fullscreen", action="store_true", help="Boot fullscreen")
     p.add_argument("--windowed", action="store_true", help="Boot in a window")

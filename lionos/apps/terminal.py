@@ -41,7 +41,7 @@ class TerminalApp(App):
         self.scroll = 0
         self._blink = 0.0
         self.history: List[str] = []
-        self.hist_idx = 0
+        self.history_idx = 0
         self.proc = None
         self.proc_queue = queue.Queue()
         self._spawn_worker()
@@ -81,7 +81,14 @@ class TerminalApp(App):
             self.lines = self.lines[-2000:]
 
     def _prompt(self):
-        return f"{os.path.basename(self.cwd) or self.cwd}> "
+        home = os_module.path.expanduser("~")
+        if self.cwd == home:
+            shown = "~"
+        elif self.cwd.startswith(home + os_module.sep):
+            shown = "~" + self.cwd[len(home):]
+        else:
+            shown = self.cwd
+        return f"{shown} > "
 
     def on_resize(self, rect):
         self.rect = rect
@@ -123,15 +130,15 @@ class TerminalApp(App):
             self.cursor = len(self.input_line)
             return True
         if k == pygame.K_UP:
-            if self.history and self.hist_idx > 0:
-                self.hist_idx -= 1
-                self.input_line = self.history[self.hist_idx]
+            if self.history and self.history_idx > 0:
+                self.history_idx -= 1
+                self.input_line = self.history[self.history_idx]
                 self.cursor = len(self.input_line)
             return True
         if k == pygame.K_DOWN:
-            if self.hist_idx < len(self.history):
-                self.hist_idx += 1
-                self.input_line = self.history[self.hist_idx] if self.hist_idx < len(self.history) else ""
+            if self.history_idx < len(self.history):
+                self.history_idx += 1
+                self.input_line = self.history[self.history_idx] if self.history_idx < len(self.history) else ""
                 self.cursor = len(self.input_line)
             return True
         if k == pygame.K_c and event.mod & pygame.KMOD_CTRL:
@@ -160,7 +167,7 @@ class TerminalApp(App):
         self.cursor = 0
         if cmd:
             self.history.append(cmd)
-            self.hist_idx = len(self.history)
+            self.history_idx = len(self.history)
         if not cmd:
             return
         if self._handle_builtin(cmd):
@@ -290,15 +297,21 @@ class TerminalApp(App):
         except queue.Empty:
             pass
 
+    def _font(self):
+        get = getattr(self.os, "get_font", None)
+        if get is not None:
+            return get(self.font_size)
+        return pygame.font.Font(None, self.font_size)
+
     def _max_scroll(self):
-        font = pygame.font.Font(None, self.font_size)
+        font = self._font()
         lh = font.get_height() + 4
         return max(0, len(self.lines) * lh - self.rect.height + 30)
 
     def draw(self, surface, rect):
         self.rect = rect
         rounded_rect(surface, rect, 0, (14, 16, 22))
-        font = pygame.font.Font(None, self.font_size)
+        font = self._font()
         lh = font.get_height() + 4
         clip = pygame.Rect(rect)
         old = surface.get_clip()
@@ -317,7 +330,7 @@ class TerminalApp(App):
         # current input line
         iy = rect.y + 8 - (self.scroll % lh) + len(self.lines) * lh
         p = self._prompt()
-        pimg = font.render(p, True, PROMPT_COLOR)
+        pimg = font.render(p, True, self.theme.accent)
         surface.blit(pimg, (x, iy))
         in_x = x + pimg.get_width()
         iimg = font.render(self.input_line, True, CMD_COLOR)

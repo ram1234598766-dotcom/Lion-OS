@@ -53,6 +53,8 @@ class FileManagerApp(App):
         self.entries = []
         self.history = []
         self.fwd = []
+        self.history_back = self.history
+        self.history_forward = self.fwd
         self.selected = None
         self.show_hidden = False
         self.search = ""
@@ -135,17 +137,27 @@ class FileManagerApp(App):
                 if y < 40:
                     idx = (local_pos[0] - self._toolbar_rect().x) // 60
                     if idx == 0:
-                        self._go_up()
+                        self._go_back()
                     elif idx == 1:
-                        self._go_home()
+                        self._go_forward()
                     elif idx == 2:
-                        self._load_dir()
+                        self._go_up()
                     elif idx == 3:
-                        self._toggle_hidden()
+                        self._go_home()
                     elif idx == 4:
-                        self._copy_selected()
+                        self._load_dir()
                     elif idx == 5:
+                        self._toggle_hidden()
+                    elif idx == 6:
+                        self._copy_selected()
+                    elif idx == 7:
                         self._paste()
+                return True
+            # breadcrumbs bar
+            if self._breadcrumbs_rect().collidepoint(local_pos):
+                crumb = self._breadcrumb_at(local_pos)
+                if crumb is not None:
+                    self._enter_dir(crumb["path"])
                 return True
             # navigate to a tile
             tile = self._tile_at(local_pos)
@@ -181,34 +193,108 @@ class FileManagerApp(App):
         items = []
         items.append(("Open", lambda: self._open(tile) if tile else None))
         if tile:
+            items.append(("Copy path", lambda: self._copy_path_to_clipboard(tile["path"])))
             items.append(("Copy", lambda: self._copy_path(tile["path"])))
             items.append(("Cut", lambda: self._cut_path(tile["path"])))
             items.append(("Rename", lambda: self._rename(tile)))
             items.append(("Delete", lambda: self._delete(tile["path"])))
+        else:
+            items.append(("Copy path", lambda: self._copy_path_to_clipboard(self.cwd)))
         items.append(("New Folder", self._new_folder))
         items.append(("Refresh", self._load_dir))
         self.os.open_menu(items, (pos[0] + self.window.content_rect.x,
                                   pos[1] + self.window.content_rect.y))
 
+    def _enter_dir(self, path):
+        """Enter path, pushing the current cwd onto the back history."""
+        if path and os.path.abspath(path) != os.path.abspath(self.cwd):
+            self.history_back.append(self.cwd)
+            self.history_forward.clear()
+            self.cwd = path
+            self._load_dir()
+
+    def _go_back(self):
+        if not self.history_back:
+            self.show_toast("File Manager", "No previous folder", "info")
+            return
+        self.history_forward.append(self.cwd)
+        self.cwd = self.history_back.pop()
+        self._load_dir()
+
+    def _go_forward(self):
+        if not self.history_forward:
+            self.show_toast("File Manager", "No next folder", "info")
+            return
+        self.history_back.append(self.cwd)
+        self.cwd = self.history_forward.pop()
+        self._load_dir()
+
     def _go_up(self):
         parent = os.path.dirname(self.cwd)
         if parent and parent != self.cwd:
-            self.history.append(self.cwd)
-            self.cwd = parent
-            self._load_dir()
+            self._enter_dir(parent)
 
     def _go_home(self):
-        self.history.append(self.cwd)
-        self.cwd = os.path.expanduser("~")
-        self._load_dir()
+        self._enter_dir(os.path.expanduser("~"))
 
     def _toggle_hidden(self):
         self.show_hidden = not self.show_hidden
         self._load_dir()
 
+    def _breadcrumbs(self):
+        """Return (label, path) pairs for each ancestor of the current cwd."""
+        home = os.path.expanduser("~")
+        crumbs = []
+        path = self.cwd
+        while True:
+            label = os.path.basename(path) or path
+            if os.path.abspath(path) == home:
+                label = "~"
+            crumbs.insert(0, (label, path))
+            parent = os.path.dirname(path)
+            if not parent or parent == path:
+                break
+            path = parent
+        return crumbs
+
+    def _breadcrumbs_rect(self):
+        tb = self._toolbar_rect()
+        return pygame.Rect(tb.x + 8, tb.bottom + 2, self.rect.width - 16, 24)
+
+    def _breadcrumb_rects(self, font):
+        """Compute clickable rects for each breadcrumb segment."""
+        bar = self._breadcrumbs_rect()
+        x = bar.x + 8
+        out = []
+        crumbs = self._breadcrumbs()
+        last = len(crumbs) - 1
+        for i, (label, path) in enumerate(crumbs):
+            sep = font.size("/")[0] + 4 if i < last else 0
+            w = font.size(label)[0] + 12 + sep
+            out.append({
+                "name": label,
+                "path": path,
+                "last": i == last,
+                "rect": pygame.Rect(x, bar.y + 2, w, bar.height - 4),
+            })
+            x += w
+        return out
+
+    def _breadcrumb_at(self, pos):
+        if self.search:
+            return None
+        font = pygame.font.Font(None, 15)
+        for b in self._breadcrumb_rects(font):
+            if b["rect"].collidepoint(pos):
+                return b
+        return None
+
+    def _body_rect(self):
+        return pygame.Rect(self.rect.x, self.rect.y + 72, self.rect.width, self.rect.height - 104)
+
     def _max_scroll(self):
         return max(0, (len(self._visible()) + self.cols - 1) // self.cols * self.icon_size -
-                   (self.rect.height - 70))
+                   self._body_rect().height)
 
     def _visible(self):
         if not self.search:
@@ -218,7 +304,7 @@ class FileManagerApp(App):
 
     def _tile_at(self, pos):
         items = self._visible()
-        body = pygame.Rect(self.rect.x, self.rect.y + 48, self.rect.width, self.rect.height - 80)
+        body = self._body_rect()
         cols = self.cols
         for i, e in enumerate(items):
             r = i // cols
@@ -231,9 +317,7 @@ class FileManagerApp(App):
 
     def _open(self, tile):
         if tile["dir"]:
-            self.history.append(self.cwd)
-            self.cwd = tile["path"]
-            self._load_dir()
+            self._enter_dir(tile["path"])
         else:
             ext = os.path.splitext(tile["name"])[1].lower()
             if ext in (".txt", ".md", ".py", ".json", ".csv", ".log", ".html", ".css", ".js", ".ini", ".toml", ".yml", ".yaml", ".cfg"):
@@ -285,6 +369,15 @@ class FileManagerApp(App):
     def _copy_path(self, path):
         self._clipboard = (path, False)
         self.show_toast("File Manager", "Copied", "info")
+
+    def _copy_path_to_clipboard(self, path):
+        """Copy a path string to the system clipboard if pyperclip is available."""
+        try:
+            import pyperclip  # noqa: PLC0415
+            pyperclip.copy(path)
+            self.show_toast("File Manager", "Path copied", "info")
+        except Exception:  # noqa: BLE001
+            self.show_toast("File Manager", "Copy path: clipboard unavailable", "info")
 
     def _cut_selected(self):
         if self.selected:
@@ -340,8 +433,8 @@ class FileManagerApp(App):
         # toolbar
         tb = self._toolbar_rect()
         rounded_rect(surface, tb, 0, self.theme.surface_alt)
-        icons = ["↑", "⌂", "⟳", "👁", "⧉", "📋"]
-        tips = ["Up", "Home", "Refresh", "Hidden files", "Copy", "Paste"]
+        icons = ["←", "→", "↑", "⌂", "⟳", "👁", "⧉", "📋"]
+        tips = ["Back", "Forward", "Up", "Home", "Refresh", "Hidden files", "Copy", "Paste"]
         for i, g in enumerate(icons):
             r = pygame.Rect(tb.x + 8 + i * 58, tb.y + 5, 50, 34)
             if r.collidepoint(pygame.mouse.get_pos()):
@@ -353,18 +446,30 @@ class FileManagerApp(App):
                 surface.blit(bg, (r.x, r.y - tip.get_height() - 8))
             gimg = font.render(g, True, self.theme.text)
             surface.blit(gimg, gimg.get_rect(center=r.center))
-        # path bar
-        path_r = pygame.Rect(tb.x + 8, tb.bottom - 30, rect.width - 16, 24)
-        rounded_rect(surface, path_r, 6, self.theme.surface)
+        # breadcrumbs bar
+        bc_bar = self._breadcrumbs_rect()
+        rounded_rect(surface, bc_bar, 6, self.theme.surface)
         if self.search:
-            p = self.search
+            pimg = small.render(self.search, True, self.theme.accent)
+            surface.blit(pimg, (bc_bar.x + 8, bc_bar.centery - pimg.get_height() // 2))
         else:
-            p = self.cwd
-        pimg = small.render(p, True, self.theme.text_dim if self.search == "" else self.theme.accent)
-        surface.blit(pimg, (path_r.x + 8, path_r.centery - pimg.get_height() // 2))
+            for b in self._breadcrumb_rects(small):
+                r = b["rect"]
+                if b["last"]:
+                    bg = self.theme.selection[:3] if len(self.theme.selection) == 3 else self.theme.selection
+                elif r.collidepoint(pygame.mouse.get_pos()):
+                    bg = self.theme.hover[:3] if len(self.theme.hover) == 3 else self.theme.hover
+                else:
+                    bg = None
+                if bg is not None:
+                    rounded_rect(surface, r, 6, bg)
+                label = b["name"] + (" /" if not b["last"] else "")
+                col = self.theme.accent if b["last"] else self.theme.text_dim
+                bimg = small.render(label, True, col)
+                surface.blit(bimg, (r.x + 6, r.centery - bimg.get_height() // 2))
 
         # grid
-        body = pygame.Rect(rect.x, rect.y + 48, rect.width, rect.height - 80)
+        body = self._body_rect()
         clip = pygame.Rect(body)
         old = surface.get_clip()
         surface.set_clip(clip)
