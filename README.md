@@ -4,15 +4,16 @@
 
 **A complete graphical desktop operating system that runs inside Python.**
 
-Boot, login, a full window manager with snapping, a taskbar, and 15 built-in apps —
-all rendered with Pygame. Installable from PyPI and started with a single command.
+Boot, login, a full window manager with snapping, a taskbar with desktop icons,
+and 15 built-in apps — all rendered with Pygame. Installable from PyPI and started
+with a single command.
 
-[Install](#-install) · [Quick Start](#-quick-start) · [Apps](#-built-in-apps) · [Screenshots](#-screenshots) · [Development](#-development)
+[Install](#-install) · [Quick Start](#-quick-start) · [Apps](#-built-in-apps) · [Features](#-features) · [Themes](#-themes) · [Development](#-development)
 
 ![Python](https://img.shields.io/badge/python-3.9%2B-blue)
 ![License](https://img.shields.io/badge/license-MIT-green)
-![version](https://img.shields.io/badge/version-1.0.0-orange)
-![tests](https://img.shields.io/badge/tests-22%20passing-brightgreen)
+![version](https://img.shields.io/badge/version-1.1.0-orange)
+![tests](https://img.shields.io/badge/tests-35%20passing-brightgreen)
 
 </div>
 
@@ -22,9 +23,14 @@ all rendered with Pygame. Installable from PyPI and started with a single comman
 
 Lion-OS is a genuine desktop environment built from scratch in Python. It has its
 own **boot sequence**, a **login screen**, a **window manager** with drag / resize /
-snap-to-edge, a **taskbar with a live launcher**, and a suite of **15 built-in
+snap-to-edge and corners, **desktop icons**, an **Alt-Tab switcher**, a **taskbar
+with a live launcher**, a working **power menu**, and a suite of **15 built-in
 applications** — including a **built-in AI assistant** that works with local and
 cloud models.
+
+The v1.1 release ("Refined") added a performance engine (cached window chrome,
+prerendered wallpaper), window animations, animated theme transitions, and deep
+feature upgrades across the most-used apps.
 
 It's designed to be simple to run and genuinely fun to explore:
 
@@ -74,7 +80,7 @@ python -m lionos
 |---|---|
 | `lionos` | Boot the desktop (windowed) |
 | `lionos --fullscreen` | Boot fullscreen |
-| `lionos --theme ocean` | Boot with a theme (dark, light, ocean, forest, violet, rose) |
+| `lionos --theme ocean` | Boot with a theme (dark, light, ocean, forest, violet, rose, sunset, midnight) |
 | `lionos --screen 1600x900` | Boot at a specific resolution |
 | `lionos --reset` | Reset saved configuration |
 | `lionos --headless` | Run the smoke test (no display, for CI) |
@@ -85,6 +91,17 @@ python -m lionos
 1. Run `lionos`. The OS boots with a progress bar, then shows the login screen.
 2. Press **Enter** to log in as the default user (or set a password in `~/.lionos/config.json`).
 3. Click the 🦁 **Start button** (bottom-left) to open the launcher, then search for any app.
+4. **Double-click a desktop icon** to launch an app, or right-click the desktop for a context menu.
+
+### Handy shortcuts
+
+| Key | What it does |
+|---|---|
+| **Win** | Toggle the launcher |
+| **Alt-Tab** | Switch between open windows |
+| **Alt-Tab → Tab** | Cycle through windows, release Alt to activate |
+| **Esc** | Close launcher / menus / power menu |
+| **↑ ↓ ← → / Enter** | Navigate the launcher grid and launch |
 
 ---
 
@@ -94,15 +111,15 @@ python -m lionos
 |---|---|---|
 | **AI Assistant** | 💬 | Chat with a built-in assistant — Ollama, OpenAI or DeepSeek |
 | **Welcome** | 👋 | Getting-started tour of the OS |
-| **File Manager** | 📁 | Browse, copy / cut / paste / delete, rename, new folders |
-| **Terminal** | ▣ | Full interactive shell with history and built-in commands |
-| **Text Editor** | ✎ | Code editing with syntax highlighting, line numbers, Ctrl+S |
-| **Calculator** | ∑ | Scientific calculator (safe AST-based evaluation) |
+| **File Manager** | 📁 | Breadcrumbs, back/forward history, right-click context menu (open/rename/delete/copy path) |
+| **Terminal** | ▣ | Full interactive shell with **command history** (↑/↓), cwd prompt, built-in commands |
+| **Text Editor** | ✎ | Code editing with syntax highlighting, **line numbers**, Ctrl+S, Ctrl+F find |
+| **Calculator** | ∑ | **Keyboard input**, history panel, percent — safe AST-based evaluation |
 | **Paint** | 🎨 | Canvas with brushes, shapes, fill, undo/redo, save to PNG |
-| **Notes** | 🗒 | Persistent sticky notes (stored in `~/.lionos/notes.json`) |
+| **Notes** | 🗒 | **Autosaving** per-note files in `~/.lionos/notes/`, note sidebar, title from first line |
 | **System Monitor** | 📊 | Live CPU / RAM / disk / network graphs |
 | **Settings** | ⚙ | Themes, appearance, AI provider, system info, config reset |
-| **Media Player** | 🎵 | Play audio with a playlist, volume, shuffle & loop |
+| **Media Player** | 🎵 | **Draggable seek bar**, volume slider, playlist, next/prev, shuffle & loop |
 | **Browser** | 🌐 | Lightweight web reader & search |
 | **App Store** | 🛍 | Install Python packages via pip from inside the OS |
 | **About** | ℹ | Version and platform info |
@@ -126,10 +143,30 @@ stored in `~/.lionos/config.json`. Nothing is hardcoded. For Ollama, run
 
 ## 🎨 Themes
 
-Six built-in themes with a glassmorphism look, switchable live from Settings or the
-UI Toolkit demo:
+Eight built-in themes with a glassmorphism look, switchable live from Settings.
+Theme changes **animate smoothly** between palettes:
 
-- **Dark** · **Light** · **Ocean** · **Forest** · **Violet** · **Rose**
+- **Dark** · **Light** · **Ocean** · **Forest** · **Violet** · **Rose** · **Sunset** · **Midnight**
+
+---
+
+## 🚀 Features
+
+- **Performance engine** — cached window chrome (shadow/body/titlebar), prerendered
+  wallpaper, dirty-flag redraw and a font cache keep the desktop smooth at 60fps.
+- **Desktop icons** — double-click to launch, single-click to select, right-click
+  the desktop for a context menu.
+- **Window manager** — drag, resize, **snap to edges and corners**, maximize,
+  minimize with **open/close/minimize animations**, Alt-Tab switcher.
+- **Power menu** — lock, sleep, restart and shutdown from the taskbar, with a
+  fade-out animation.
+- **Launcher** — search-first with **category tabs**, keyboard grid navigation and
+  a recent-apps row.
+- **Keyboard-first** — Win-key launcher, arrow-key navigation, Alt-Tab window
+  switching.
+- **Animated theme transitions** — switching themes cross-fades every color.
+- **Shared icon tiles** — the same gradient app icons appear in the launcher,
+  taskbar, desktop and About screen.
 
 ---
 
@@ -138,7 +175,7 @@ UI Toolkit demo:
 ```
 lionos/
 ├── cli.py          # `lionos` command-line entry point
-├── kernel.py       # desktop environment, boot, login, taskbar, launcher
+├── kernel.py       # desktop env: boot, login, icons, taskbar, launcher, power menu
 ├── wm.py           # window manager: drag, resize, snap, focus, z-order
 ├── theme.py        # color themes & blending
 ├── config.py       # persistent user configuration (~/.lionos/config.json)
@@ -174,11 +211,15 @@ python -m pip install -e ".[dev]"
 pytest
 ```
 
-Tests cover boot, login, app registration, app rendering, calculator math,
-window move/snap/close, theme switching and the headless smoke test.
+Tests cover boot, login, app registration, app rendering, calculator math
+(mouse + keyboard), window move/snap/close, corner snapping, Alt-Tab, launcher
+keyboard nav, desktop icons, theme switching + transitions, window chrome caching,
+terminal history and notes autosave — plus the headless smoke test.
 
 CI (`.github/workflows/ci.yml`) runs the full suite on every push and automatically
-builds and publishes a wheel + GitHub Release on tags.
+builds a wheel + sdist and attaches them to a GitHub Release on tags. Tag pushes
+create the GitHub release only; publishing to PyPI is opt-in via a manual
+workflow run.
 
 ---
 
@@ -187,7 +228,7 @@ builds and publishes a wheel + GitHub Release on tags.
 Pre-built wheels are attached to [GitHub Releases](https://github.com/ram1234598766-dotcom/Lion-OS/releases):
 
 ```
-pip install https://github.com/ram1234598766-dotcom/Lion-OS/releases/download/v1.0.0/lion_os-1.0.0-py3-none-any.whl
+pip install https://github.com/ram1234598766-dotcom/Lion-OS/releases/download/v1.1.0/lion_os-1.1.0-py3-none-any.whl
 ```
 
 ---
