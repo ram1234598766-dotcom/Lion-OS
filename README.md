@@ -1,0 +1,216 @@
+<div align="center">
+
+# 🦁 Lion-OS
+
+**A complete graphical desktop operating system that runs inside Python.**
+
+Boot, login, a full window manager with snapping, a taskbar, and 15 built-in apps —
+all rendered with Pygame. Installable from PyPI and started with a single command.
+
+[Install](#-install) · [Quick Start](#-quick-start) · [Apps](#-built-in-apps) · [Screenshots](#-screenshots) · [Development](#-development)
+
+![Python](https://img.shields.io/badge/python-3.9%2B-blue)
+![License](https://img.shields.io/badge/license-MIT-green)
+![version](https://img.shields.io/badge/version-1.0.0-orange)
+![tests](https://img.shields.io/badge/tests-22%20passing-brightgreen)
+
+</div>
+
+---
+
+## ✨ What is Lion-OS?
+
+Lion-OS is a genuine desktop environment built from scratch in Python. It has its
+own **boot sequence**, a **login screen**, a **window manager** with drag / resize /
+snap-to-edge, a **taskbar with a live launcher**, and a suite of **15 built-in
+applications** — including a **built-in AI assistant** that works with local and
+cloud models.
+
+It's designed to be simple to run and genuinely fun to explore:
+
+```
+lionos
+```
+
+That's it. The desktop boots, you log in, and you have a working graphical OS.
+
+---
+
+## 🚀 Install
+
+### Option 1 — Install from source (recommended)
+
+```bash
+git clone https://github.com/ram1234598766-dotcom/Lion-OS.git
+cd Lion-OS
+python -m pip install .
+lionos
+```
+
+### Option 2 — Install from PyPI
+
+```bash
+python -m pip install lion-os
+lionos
+```
+
+> **Requirements:** Python 3.9+. On first run Lion-OS installs nothing extra —
+> Pygame and psutil are dependencies and come automatically.
+
+### Option 3 — Run without installing
+
+```bash
+git clone https://github.com/ram1234598766-dotcom/Lion-OS.git
+cd Lion-OS
+python -m pip install pygame-ce psutil requests
+python -m lionos
+```
+
+---
+
+## 🖥 Quick Start
+
+| Command | What it does |
+|---|---|
+| `lionos` | Boot the desktop (windowed) |
+| `lionos --fullscreen` | Boot fullscreen |
+| `lionos --theme ocean` | Boot with a theme (dark, light, ocean, forest, violet, rose) |
+| `lionos --screen 1600x900` | Boot at a specific resolution |
+| `lionos --reset` | Reset saved configuration |
+| `lionos --headless` | Run the smoke test (no display, for CI) |
+| `lionos --version` | Print the version |
+
+### First-time use
+
+1. Run `lionos`. The OS boots with a progress bar, then shows the login screen.
+2. Press **Enter** to log in as the default user (or set a password in `~/.lionos/config.json`).
+3. Click the 🦁 **Start button** (bottom-left) to open the launcher, then search for any app.
+
+---
+
+## 📱 Built-in Apps
+
+| App | Icon | Description |
+|---|---|---|
+| **AI Assistant** | 💬 | Chat with a built-in assistant — Ollama, OpenAI or DeepSeek |
+| **Welcome** | 👋 | Getting-started tour of the OS |
+| **File Manager** | 📁 | Browse, copy / cut / paste / delete, rename, new folders |
+| **Terminal** | ▣ | Full interactive shell with history and built-in commands |
+| **Text Editor** | ✎ | Code editing with syntax highlighting, line numbers, Ctrl+S |
+| **Calculator** | ∑ | Scientific calculator (safe AST-based evaluation) |
+| **Paint** | 🎨 | Canvas with brushes, shapes, fill, undo/redo, save to PNG |
+| **Notes** | 🗒 | Persistent sticky notes (stored in `~/.lionos/notes.json`) |
+| **System Monitor** | 📊 | Live CPU / RAM / disk / network graphs |
+| **Settings** | ⚙ | Themes, appearance, AI provider, system info, config reset |
+| **Media Player** | 🎵 | Play audio with a playlist, volume, shuffle & loop |
+| **Browser** | 🌐 | Lightweight web reader & search |
+| **App Store** | 🛍 | Install Python packages via pip from inside the OS |
+| **About** | ℹ | Version and platform info |
+| **UI Toolkit** | 🧰 | Interactive demo of every widget |
+
+### 🧠 AI Assistant
+
+Open **AI Assistant**, then configure the provider in **Settings → AI Assistant**:
+
+| Provider | Endpoint | Model |
+|---|---|---|
+| **Ollama** (default, local) | `http://localhost:11434/v1` | `llama3` |
+| **OpenAI** | `https://api.openai.com/v1` | `gpt-4o-mini` |
+| **DeepSeek** | `https://api.deepseek.com/v1` | `deepseek-chat` |
+
+API keys are read from the environment (`OPENAI_API_KEY`, `DEEPSEEK_API_KEY`) or
+stored in `~/.lionos/config.json`. Nothing is hardcoded. For Ollama, run
+`ollama serve` locally first.
+
+---
+
+## 🎨 Themes
+
+Six built-in themes with a glassmorphism look, switchable live from Settings or the
+UI Toolkit demo:
+
+- **Dark** · **Light** · **Ocean** · **Forest** · **Violet** · **Rose**
+
+---
+
+## 🧱 Architecture
+
+```
+lionos/
+├── cli.py          # `lionos` command-line entry point
+├── kernel.py       # desktop environment, boot, login, taskbar, launcher
+├── wm.py           # window manager: drag, resize, snap, focus, z-order
+├── theme.py        # color themes & blending
+├── config.py       # persistent user configuration (~/.lionos/config.json)
+├── widgets.py      # UI toolkit: buttons, inputs, sliders, lists, menus
+├── ai/             # AI provider backends (Ollama / OpenAI / DeepSeek)
+└── apps/           # 15 built-in applications
+    ├── base.py     # App base class + registry
+    └── ...         # calculator, terminal, paint, notes, etc.
+```
+
+New apps are trivial to add:
+
+```python
+from lionos.apps.base import App
+
+class MyApp(App):
+    name = "My App"
+    icon = "✨"
+    def draw(self, surface, rect):
+        ...  # draw into the window
+
+# register in lionos/apps/__init__.py
+```
+
+---
+
+## 🧪 Tests & CI
+
+Run the automated suite (headless — no display needed):
+
+```bash
+python -m pip install -e ".[dev]"
+pytest
+```
+
+Tests cover boot, login, app registration, app rendering, calculator math,
+window move/snap/close, theme switching and the headless smoke test.
+
+CI (`.github/workflows/ci.yml`) runs the full suite on every push and automatically
+builds and publishes a wheel + GitHub Release on tags.
+
+---
+
+## 📦 Releases
+
+Pre-built wheels are attached to [GitHub Releases](https://github.com/ram1234598766-dotcom/Lion-OS/releases):
+
+```
+pip install https://github.com/ram1234598766-dotcom/Lion-OS/releases/download/v1.0.0/lion_os-1.0.0-py3-none-any.whl
+```
+
+---
+
+## 🛠 Development
+
+```bash
+git clone https://github.com/ram1234598766-dotcom/Lion-OS.git
+cd Lion-OS
+python -m pip install -e ".[dev]"
+pytest                      # run tests
+python -m lionos --headless # smoke test
+lionos                      # run the desktop
+```
+
+---
+
+## 📄 License
+
+MIT © Mrityunjay. See [LICENSE](LICENSE).
+
+<div align="center">
+
+**Made with 💛 and Pygame.**
+
+</div>
