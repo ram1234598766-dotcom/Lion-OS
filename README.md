@@ -12,8 +12,8 @@ with a single command.
 
 ![Python](https://img.shields.io/badge/python-3.9%2B-blue)
 ![License](https://img.shields.io/badge/license-MIT-green)
-![version](https://img.shields.io/badge/version-1.1.2-orange)
-![tests](https://img.shields.io/badge/tests-35%20passing-brightgreen)
+![version](https://img.shields.io/badge/version-2.0.0-orange)
+![tests](https://img.shields.io/badge/tests-122%20passing-brightgreen)
 
 </div>
 
@@ -38,10 +38,30 @@ every frame; app-icon tiles and glass panels are cached; fonts are shared throug
 a global cache instead of being rebuilt per draw call; and the System Monitor's
 graph no longer allocates a fresh fill surface each frame.
 
-The v1.1.2 release makes the install-to-run experience bulletproof: the package
+The v1.1.2 release made the install-to-run experience bulletproof: the package
 installs **two equivalent commands** (`lionos` and `lion-os-desktop`), `python -m
 lionos` works even when a console script isn't on your PATH, and the PyPI listing
 metadata is clean.
+
+The **v2.0.0 "Majestic"** release is the biggest yet:
+
+- **Procedural vector icons** — every app gets hand-drawn, theme-aware icon art
+  (no more emoji), crisp at any size.
+- **A real driver architecture** — a driver bus with **99 drivers** (display,
+  audio, input, media, network + 94 simulated across storage, security,
+  networking, diagnostics, virtualization, IoT and more), all auto-probing,
+  auto-tuning and self-healing at boot, plus a **Devices & Drivers** app.
+- **Auto-configuration** — everything configures itself; `python -m lionos` just
+  works, and `~/.lionos/drivers.auto.json` records what was tuned.
+- **Persistence** — session resume (windows restore + animate back in),
+  crash-recovery checkpoints, an activity log with launcher Recents and a boot
+  "Session Summary" card, a clipboard with history, and a first-boot wizard.
+- **Chrome & power features** — a catalog launcher, notification center, sound
+  design, wallpaper gallery + accent picker, system tray + statusline widgets,
+  motion-level accessibility, virtual workspaces, window tiling, global search
+  (F2), a screenshot tool, and focus mode.
+- **20 built-in apps** — now including Help, Devices, Inbox, System Health and
+  Today, plus a rebuilt Media Player.
 
 It's designed to be simple to run and genuinely fun to explore:
 
@@ -291,7 +311,7 @@ Python version on Windows, macOS and Linux — no compiler needed.
 Pre-built wheels are attached to [GitHub Releases](https://github.com/ram1234598766-dotcom/Lion-OS/releases):
 
 ```
-pip install https://github.com/ram1234598766-dotcom/Lion-OS/releases/download/v1.1.2/lion_os_desktop-1.1.2-py3-none-any.whl
+pip install https://github.com/ram1234598766-dotcom/Lion-OS/releases/download/v2.0.0/lion_os_desktop-2.0.0-py3-none-any.whl
 ```
 
 ---
