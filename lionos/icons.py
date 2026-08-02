@@ -51,6 +51,151 @@ def glyph_scene(char):
     return [s_glyph(char, 40, "text", cx=32, cy=32)]
 
 
+# --- app icon scenes (normalized 0..64) ------------------------------------
+APP_ICONS: Dict[str, Scene] = {
+    # Terminal: prompt + underscore line on a dark panel
+    "Terminal": [
+        s_rect(10, 18, 44, 34, "panel", radius=6),
+        s_glyph(">", 16, "accent", cx=22, cy=32),
+        s_line(32, 32, 52, 32, "muted", 3),
+    ],
+    # Calculator: rounded body + key grid
+    "Calculator": [
+        s_rect(14, 10, 36, 46, "panel", radius=6),
+        s_rect(20, 16, 24, 6, "muted", radius=2),
+        *[s_circle(cx=22 + (i % 3) * 10, cy=30 + (i // 3) * 10, r=3,
+                   color=("accent" if i < 4 else "muted"))
+          for i in range(9)],
+    ],
+    # File Manager: folder with tab
+    "File Manager": [
+        s_rect(12, 20, 16, 8, "accent2", radius=3),
+        s_rect(10, 24, 44, 28, "accent", radius=4),
+        s_line(18, 34, 46, 34, "white", 2),
+        s_line(18, 40, 40, 40, "white", 2),
+    ],
+    # Notes: page with lines + folded corner
+    "Notes": [
+        s_rect(18, 12, 30, 42, "panel", radius=4),
+        s_line(24, 24, 42, 24, "muted", 2),
+        s_line(24, 32, 42, 32, "muted", 2),
+        s_line(24, 40, 36, 40, "muted", 2),
+        s_poly([(44, 40), (48, 40), (48, 36), (44, 40)], "accent"),
+    ],
+    # Settings: gear (circle + spokes)
+    "Settings": [
+        s_circle(cx=32, cy=32, r=9, color="accent", width=3),
+        s_circle(cx=32, cy=32, r=4, color="accent"),
+        *[s_line(cx0, cy0, cx1, cy1, "accent", 3)
+          for (cx0, cy0, cx1, cy1) in [
+              (32, 10, 32, 17), (32, 47, 32, 54), (10, 32, 17, 32),
+              (47, 32, 54, 32), (16, 16, 21, 21), (43, 43, 48, 48),
+              (43, 21, 48, 16), (16, 43, 21, 48)]],
+    ],
+    # Browser: globe
+    "Browser": [
+        s_circle(cx=32, cy=32, r=18, color="accent", width=3),
+        s_ellipse(14, 18, 36, 28, "accent", width=2),
+        s_line(14, 32, 50, 32, "accent", 2),
+        s_line(32, 14, 32, 50, "accent", 2),
+    ],
+    # Media Player: two music notes
+    "Media Player": [
+        s_circle(cx=20, cy=46, r=6, color="accent"),
+        s_line(24, 46, 24, 18, "accent", 3),
+        s_line(24, 18, 44, 12, "accent", 3),
+        s_line(44, 12, 44, 32, "accent", 3),
+        s_circle(cx=44, cy=32, r=6, color="accent"),
+    ],
+    # Paint: palette with dots
+    "Paint": [
+        s_circle(cx=32, cy=32, r=20, color="accent", width=3),
+        s_circle(cx=32, cy=32, r=13, color="accent"),
+        s_circle(cx=24, cy=38, r=4, color="success"),
+        s_circle(cx=34, cy=42, r=4, color="warn"),
+        s_circle(cx=42, cy=34, r=4, color="danger"),
+    ],
+    # AI Assistant: chat bubble with dots
+    "AI Assistant": [
+        s_rect(12, 14, 40, 28, "accent", radius=8),
+        s_poly([(16, 40), (16, 50), (26, 40)], "accent"),
+        s_circle(cx=24, cy=28, r=3, color="white"),
+        s_circle(cx=32, cy=28, r=3, color="white"),
+        s_circle(cx=40, cy=28, r=3, color="white"),
+    ],
+    # System Monitor: bar chart
+    "System Monitor": [
+        s_line(12, 52, 52, 52, "muted", 3),
+        s_rect(16, 34, 8, 18, "accent", radius=2),
+        s_rect(28, 22, 8, 30, "success", radius=2),
+        s_rect(40, 12, 8, 40, "warn", radius=2),
+    ],
+    # Text Editor: page with pencil
+    "Text Editor": [
+        s_rect(18, 10, 30, 44, "panel", radius=4),
+        s_line(24, 22, 42, 22, "muted", 2),
+        s_line(24, 30, 42, 30, "muted", 2),
+        s_line(24, 38, 36, 38, "muted", 2),
+        s_line(40, 40, 50, 30, "accent", 3),
+        s_line(50, 30, 54, 34, "accent", 3),
+    ],
+    # About: info ring
+    "About": [
+        s_circle(cx=32, cy=32, r=20, color="accent", width=3),
+        s_circle(cx=32, cy=24, r=3, color="accent"),
+        s_line(32, 30, 32, 44, "accent", 3),
+    ],
+    # App Store: shopping bag
+    "App Store": [
+        s_arc(26, 12, 12, 10, 3.14, 6.28, "accent", 3),
+        s_rect(18, 22, 28, 30, "accent", radius=4),
+        s_line(26, 22, 26, 30, "white", 2),
+        s_line(38, 22, 38, 30, "white", 2),
+    ],
+    # Welcome: sparkle star
+    "Welcome": [
+        s_poly([(32, 10), (37, 27), (54, 32), (37, 37), (32, 54),
+                (27, 37), (10, 32), (27, 27)], "accent"),
+    ],
+    # UI Toolkit: 2x2 grid of rounded squares
+    "UI Toolkit": [
+        s_rect(12, 12, 16, 16, "accent", radius=4),
+        s_rect(36, 12, 16, 16, "success", radius=4),
+        s_rect(12, 36, 16, 16, "warn", radius=4),
+        s_rect(36, 36, 16, 16, "muted", radius=4),
+    ],
+    # --- planned Phase-5 apps (scenes defined now so Phase 1 tests cover them)
+    "Help": [
+        s_circle(cx=32, cy=32, r=20, color="accent", width=3),
+        s_glyph("?", 24, "accent", cx=32, cy=34),
+    ],
+    "System Health": [
+        s_circle(cx=18, cy=32, r=9, color="danger", width=3),
+        s_poly([(32, 32), (38, 26), (44, 30), (54, 22), (52, 34),
+                (44, 36), (36, 40)], "success"),
+        s_line(52, 34, 56, 38, "warn", 3),
+    ],
+    "Inbox": [
+        s_rect(10, 18, 44, 30, "accent", radius=6),
+        s_line(14, 24, 32, 36, "white", 3),
+        s_line(50, 24, 32, 36, "white", 3),
+    ],
+    "Today": [
+        s_circle(cx=32, cy=32, r=20, color="accent", width=3),
+        s_line(32, 14, 32, 32, "accent", 3),
+        s_line(32, 32, 44, 40, "accent", 3),
+    ],
+    "Devices": [
+        s_rect(10, 24, 30, 18, "panel", radius=4),
+        s_circle(cx=30, cy=33, r=5, color="accent", width=3),
+        s_line(46, 22, 52, 22, "accent", 3),
+        s_line(46, 34, 52, 34, "accent", 3),
+        s_line(52, 22, 52, 34, "accent", 3),
+        s_rect(36, 26, 8, 14, "accent", radius=2),
+    ],
+}
+
+
 # --- palette --------------------------------------------------------------
 def palette_for(theme: Theme) -> Dict[str, Color]:
     return {

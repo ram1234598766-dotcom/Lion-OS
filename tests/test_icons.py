@@ -4,7 +4,8 @@ os.environ.setdefault("SDL_VIDEODRIVER", "dummy")
 import pygame
 pygame.font.init()
 from lionos.icons import (s_rect, s_circle, s_line, s_glyph, glyph_scene,
-                          IconCache, palette_for)
+                          IconCache, palette_for, APP_ICONS)
+from lionos.apps import get_apps
 from lionos.theme import THEMES
 
 
@@ -46,3 +47,19 @@ def test_glyph_fallback_renders():
     cache = IconCache()
     surf = cache.render(glyph_scene("☺"), "fallback", 24, THEMES["dark"])
     assert surf.get_size() == (24, 24)
+
+
+def test_every_registered_app_has_an_icon():
+    cache = IconCache()
+    for cls in get_apps():
+        scene = APP_ICONS.get(cls.name) or glyph_scene(cls.icon)
+        surf = cache.render(scene, cls.name, 32, THEMES["dark"])
+        assert surf.get_size() == (32, 32), cls.name
+
+
+def test_all_scenes_render_at_three_sizes():
+    cache = IconCache()
+    for name, scene in APP_ICONS.items():
+        for size in (16, 32, 64):
+            surf = cache.render(scene, name, size, THEMES["dark"])
+            assert surf.get_size() == (size, size), (name, size)

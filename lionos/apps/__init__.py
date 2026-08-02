@@ -31,3 +31,9 @@ def load_apps() -> AppRegistry:
         widgets_demo.WidgetsDemoApp,
     ])
     return registry
+
+
+def get_apps():
+    """Return the list of registered app classes (stable order)."""
+    load_apps()
+    return [registry.get(n) for n in registry.all()]
