@@ -140,6 +140,19 @@ def theme_contrast_report(t):
     }
 
 
+def accented(theme, rgb):
+    """Return a copy of ``theme`` with the accent family overridden."""
+    from dataclasses import replace
+    return replace(theme,
+                   accent=rgb,
+                   accent2=rgb,
+                   icon_grad1=rgb,
+                   glow=rgb,
+                   taskbar_active=rgb,
+                   selection=rgb[:3] + (70,),
+                   icon_bg=rgb)
+
+
 DARK = Theme(
     name="Dark",
     is_dark=True,

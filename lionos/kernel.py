@@ -18,7 +18,7 @@ import pygame
 
 from . import __version__
 from .config import ConfigStore, LionConfig, ensure_config_dir
-from .theme import Theme, THEMES, blend
+from .theme import Theme, THEMES, blend, accented
 from .wizard import WIZARD_STEPS, load_profile, save_profile
 from . import activity as _activity
 from . import session as _session
@@ -230,6 +230,21 @@ class LionOS:
         self._needs_redraw = True
         return inst
 
+    # -------------------------------------------------------------- chrome
+    def wallpaper_names(self):
+        return ["gradient", "aurora", "grid", "dots", "mountain"]
+
+    def motion_ok(self):
+        """Whether animations/transitions should run (accessibility gate)."""
+        return self.config.motion != "none" and self.config.anim_enabled
+
+    def apply_accent(self, rgb):
+        self.config.accent_override = "#{:02x}{:02x}{:02x}".format(*rgb[:3])
+        self.theme = accented(self.theme, tuple(rgb[:3]))
+        self.wm.theme = self.theme
+        self._wallpaper_key = None
+        self._needs_redraw = True
+
     # ------------------------------------------------------------------ utils
     def show_toast(self, title, message, kind="info"):
         self.toasts.append(Toast(title, message, self.theme, kind=kind))
@@ -273,7 +288,7 @@ class LionOS:
         self.config_store.set(theme=name)
         self.config.theme = name
         target = THEMES[name]
-        if self.config.anim_enabled and not self._no_draw:
+        if self.motion_ok() and not self._no_draw:
             self._theme_from = self.theme
             self._theme_to = target
             self._theme_t = 0.0
@@ -1009,17 +1024,48 @@ class LionOS:
 
     def _ensure_wallpaper(self):
         key = (self.theme.name, self.theme.wallpaper_top, self.theme.wallpaper_bottom,
-               self.theme.accent, self.screen_w, self.screen_h)
+               self.theme.accent, self.screen_w, self.screen_h, self.config.wallpaper)
         if key == self._wallpaper_key and self._wallpaper_surf is not None:
             return
         surf = pygame.Surface((self.screen_w, self.screen_h))
         top = self.theme.wallpaper_top
         bottom = self.theme.wallpaper_bottom
         h = self.screen_h
+        w = self.screen_w
+        style = self.config.wallpaper
+        # base vertical gradient
         for y in range(0, h, 2):
             t = y / max(1, h)
-            color = blend(top, bottom, t)
-            pygame.draw.line(surf, color, (0, y), (self.screen_w, y))
+            pygame.draw.line(surf, blend(top, bottom, t), (0, y), (w, y))
+        if style == "aurora":
+            for i in range(4):
+                cx0 = (w * (i + 0.5)) // 4
+                cy0 = h // 2
+                for rr in range(h // 2, 0, -10):
+                    a = 0.10 * (1 - rr / (h // 2))
+                    col = blend((0, 0, 0), self.theme.glow, a)
+                    pygame.draw.circle(surf, col, (cx0, cy0), rr, 2)
+        elif style == "grid":
+            line_c = blend(bottom, (255, 255, 255), 0.07)
+            for gx in range(0, w, 48):
+                pygame.draw.line(surf, line_c, (gx, 0), (gx, h))
+            for gy in range(0, h, 48):
+                pygame.draw.line(surf, line_c, (0, gy), (w, gy))
+        elif style == "dots":
+            dot_c = blend(bottom, (255, 255, 255), 0.12)
+            for gx in range(24, w, 48):
+                for gy in range(24, h, 48):
+                    pygame.draw.circle(surf, dot_c, (gx, gy), 2)
+        elif style == "mountain":
+            import random as _rnd
+            layers = [self.theme.accent, self.theme.accent_alt, self.theme.glow]
+            for i, col in enumerate(layers):
+                rnd = _rnd.Random(42 + i)
+                pts = [(0, h)]
+                for j in range(1, 6):
+                    pts.append((w * j / 6, h * (0.55 + rnd.random() * 0.22)))
+                pts += [(w, h)]
+                pygame.draw.polygon(surf, col, pts)
         self._wallpaper_surf = surf
         self._wallpaper_key = key
 
