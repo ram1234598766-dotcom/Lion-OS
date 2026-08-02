@@ -34,7 +34,7 @@
   - `ensure_contrast(text, bg, min_ratio=4.5) -> Color` (brighten/darken text until it passes, returns the adjusted color)
   - `theme_contrast_report(theme) -> dict` (body text vs surface/wallpaper ratios).
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```python
 # tests/test_theme_tokens.py
@@ -67,12 +67,12 @@ def test_theme_interpolates_tokens():
     assert isinstance(m.radius, int) and m.radius == a.radius  # ints pass through
 ```
 
-- [ ] **Step 2: Run the test to verify it fails**
+- [x] **Step 2: Run the test to verify it fails**
 
 Run: `py -3 -m pytest tests/test_theme_tokens.py -v`
 Expected: FAIL — `relative_luminance` / `contrast_ratio` undefined.
 
-- [ ] **Step 3: Implement tokens + contrast in `theme.py`**
+- [x] **Step 3: Implement tokens + contrast in `theme.py`**
 
 Append to `lionos/theme.py`:
 
@@ -148,17 +148,17 @@ Also make `as_dict()` skip `radius`, `spacing` (they are ints, not colors):
 
 **Note on failing themes:** `test_all_themes_pass_body_contrast` may surface a theme whose `text` vs `surface` or `wallpaper` ratio is < 4.5. Fix by nudging that theme's `text` (or `wallpaper_top`) via `ensure_contrast` in the theme's literal. Verify with the test — do not weaken the assertion.
 
-- [ ] **Step 4: Run the test to verify it passes**
+- [x] **Step 4: Run the test to verify it passes**
 
 Run: `py -3 -m pytest tests/test_theme_tokens.py -v`
 Expected: PASS (adjust any theme palette that fails the contrast assertion).
 
-- [ ] **Step 5: Run the full suite + smoke**
+- [x] **Step 5: Run the full suite + smoke**
 
 Run: `py -3 -m pytest tests/ -q` then `LION_OS_HEADLESS=1 py -3 -m lionos --headless`
 Expected: 35+ passing; smoke prints `[ok] booted + logged in`.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add lionos/theme.py tests/test_theme_tokens.py
@@ -186,7 +186,7 @@ git commit -m "feat(theme): semantic tokens + WCAG-AA contrast utilities"
   - `IconCache.render(scene, scene_id, size, theme) -> pygame.Surface` (2× supersampled, cached by `(scene_id, size, fingerprint)`).
   - `glyph_scene(char) -> Scene` — fallback that renders a glyph centered.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```python
 # tests/test_icons.py
@@ -230,12 +230,12 @@ def test_glyph_fallback_renders():
     assert surf.get_size() == (24, 24)
 ```
 
-- [ ] **Step 2: Run the test to verify it fails**
+- [x] **Step 2: Run the test to verify it fails**
 
 Run: `py -3 -m pytest tests/test_icons.py -v`
 Expected: FAIL — `lionos.icons` has no module.
 
-- [ ] **Step 3: Implement `lionos/icons.py`**
+- [x] **Step 3: Implement `lionos/icons.py`**
 
 ```python
 """Procedural vector icon system for Lion-OS.
@@ -373,12 +373,12 @@ class IconCache:
         return surf
 ```
 
-- [ ] **Step 4: Run the test to verify it passes**
+- [x] **Step 4: Run the test to verify it passes**
 
 Run: `py -3 -m pytest tests/test_icons.py -v`
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add lionos/icons.py tests/test_icons.py
@@ -397,7 +397,7 @@ git commit -m "feat(icons): procedural vector icon framework with supersampled c
 - Consumes: `Scene` builders from Task 2.
 - Produces: `APP_ICONS: Dict[str, Scene]` keyed by app `name` for all 15 current apps + the 5 planned new apps ("Help", "System Health", "Inbox", "Today", "Devices"). A missing key falls back to `glyph_scene(cls.icon)`.
 
-- [ ] **Step 1: Write the failing test (extend `tests/test_icons.py`)**
+- [x] **Step 1: Write the failing test (extend `tests/test_icons.py`)**
 
 ```python
 from lionos.icons import APP_ICONS, IconCache, glyph_scene
@@ -418,12 +418,12 @@ def test_all_scenes_render_at_three_sizes():
             assert surf.get_size() == (size, size), (name, size)
 ```
 
-- [ ] **Step 2: Run to verify it fails**
+- [x] **Step 2: Run to verify it fails**
 
 Run: `py -3 -m pytest tests/test_icons.py -v`
 Expected: FAIL — `APP_ICONS`/`get_apps` undefined.
 
-- [ ] **Step 3: Implement `APP_ICONS` and `get_apps`**
+- [x] **Step 3: Implement `APP_ICONS` and `get_apps`**
 
 Add to `lionos/apps/__init__.py` (module already imports the app classes and builds the registry):
 
@@ -581,12 +581,12 @@ APP_ICONS: Dict[str, Scene] = {
 }
 ```
 
-- [ ] **Step 4: Run to verify it passes**
+- [x] **Step 4: Run to verify it passes**
 
 Run: `py -3 -m pytest tests/test_icons.py -v`
 Expected: PASS (all 20 apps render at 16/32/64).
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add lionos/icons.py lionos/apps/__init__.py tests/test_icons.py
@@ -605,7 +605,7 @@ git commit -m "feat(icons): app icon scenes for all apps"
 - Consumes: `IconCache` + `APP_ICONS`/`glyph_scene` from Tasks 2-3; `cached_font`.
 - Produces: `LionOS.icon_cache: IconCache`; `draw_app_tile(..., icon_cache=None, scene=None, scene_id=None)` — when `scene` is provided, draws the vector icon instead of the emoji glyph; when not, falls back to the glyph.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```python
 # tests/test_shell_icons.py
@@ -648,12 +648,12 @@ def test_draw_app_tile_falls_back_to_glyph_without_scene(surf):
     # should not raise
 ```
 
-- [ ] **Step 2: Run to verify it fails**
+- [x] **Step 2: Run to verify it fails**
 
 Run: `py -3 -m pytest tests/test_shell_icons.py -v`
 Expected: FAIL — `draw_app_tile` has no `icon_cache`/`scene` params.
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 Modify `draw_app_tile` in `lionos/widgets.py` (replace the glyph render block):
 
@@ -730,12 +730,12 @@ In `lionos/kernel.py`:
 
 - In the launcher / taskbar / titlebar / Alt-Tab draw calls, pass `icon_cache=self.icon_cache, scene=APP_ICONS.get(name), scene_id=name` wherever `draw_app_tile` is called (kernel.py lines near 1057, 1092). Where glyphs are rendered directly (titlebar `font.render(win.app.icon ...)` at ~1142 and Alt-Tab), leave glyphs as-is for this task (they are small) — note for Phase 4 chrome polish.
 
-- [ ] **Step 4: Run tests + smoke**
+- [x] **Step 4: Run tests + smoke**
 
 Run: `py -3 -m pytest tests/ -q` then `LION_OS_HEADLESS=1 py -3 -m lionos --headless`
 Expected: all pass (including the new shell-icon tests); smoke `[ok]`.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add lionos/widgets.py lionos/kernel.py tests/test_shell_icons.py
@@ -758,7 +758,7 @@ git commit -m "feat(icons): vector icons in desktop, launcher, taskbar shell"
   - `DirtyTracker(max_rects=32)` with `.mark(rect)`, `.clear()`, `.consume_full() -> bool`, `.consume_rects() -> list[pygame.Rect]`; unions overlapping rects and flips to full when exhausted.
   - `PerfCounters` with `.begin_frame()`, `.end_frame()`, `.frame_ms`, `.fps`, `.redraw_count`, `.mark_redraw()`.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```python
 # tests/test_loop.py
@@ -798,12 +798,12 @@ def test_perf_counters():
     assert pc.redraw_count == 1
 ```
 
-- [ ] **Step 2: Run to verify it fails**
+- [x] **Step 2: Run to verify it fails**
 
 Run: `py -3 -m pytest tests/test_loop.py -v`
 Expected: FAIL — `lionos.loop` has no module.
 
-- [ ] **Step 3: Implement `lionos/loop.py`**
+- [x] **Step 3: Implement `lionos/loop.py`**
 
 ```python
 """Deterministic main-loop helpers: fixed timestep, dirty tracking, perf.
@@ -894,12 +894,12 @@ class PerfCounters:
         self.redraw_count += 1
 ```
 
-- [ ] **Step 4: Run to verify it passes**
+- [x] **Step 4: Run to verify it passes**
 
 Run: `py -3 -m pytest tests/test_loop.py -v`
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add lionos/loop.py tests/test_loop.py
@@ -918,7 +918,7 @@ git commit -m "feat(loop): deterministic main-loop helpers (budget/dirty/perf)"
 - Consumes: `FrameBudget`, `DirtyTracker`, `PerfCounters` from Task 5.
 - Produces: `LionOS.fps` (float, live), `LionOS._perf: PerfCounters`, `LionOS._dirty: DirtyTracker`; `LionConfig.vsync: bool` (default False — SDL dummy driver has no vsync), `LionConfig.show_fps: bool` (default False).
 
-- [ ] **Step 1: Write the failing test (extend `tests/test_loop.py`)**
+- [x] **Step 1: Write the failing test (extend `tests/test_loop.py`)**
 
 ```python
 from lionos.loop import FrameBudget, DirtyTracker, PerfCounters
@@ -928,12 +928,12 @@ def test_kernel_loop_helpers_wire_in():  # smoke that imports resolve
     assert hasattr(L, "FrameBudget") and hasattr(L, "DirtyTracker") and hasattr(L, "PerfCounters")
 ```
 
-- [ ] **Step 2: Run to verify it fails**
+- [x] **Step 2: Run to verify it fails**
 
 Run: `py -3 -m pytest tests/test_loop.py -v`
 Expected: already passing — this task's real verification is the headless smoke exercising `run()` (Step 4).
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 In `lionos/config.py` `LionConfig`, add defaults (near the other resolution/fps defaults):
 
@@ -1010,12 +1010,12 @@ In `lionos/kernel.py`:
 
 - Draw the FPS when `self.config.show_fps` in `_draw` (top-left, via `get_font(14)`, cached surface not needed for this debug overlay).
 
-- [ ] **Step 4: Verify with headless smoke + suite**
+- [x] **Step 4: Verify with headless smoke + suite**
 
 Run: `LION_OS_HEADLESS=1 py -3 -m lionos --headless` and `py -3 -m pytest tests/ -q`
 Expected: smoke `[ok]`; all tests pass. (Note: SDL dummy driver ignores vsync; the headless path never calls `set_mode`.)
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add lionos/kernel.py lionos/config.py tests/test_loop.py
@@ -1034,7 +1034,7 @@ git commit -m "feat(loop): vsync + fixed timestep + dirty-present + perf in kern
 - Consumes: existing `_draw_window`.
 - Produces: `App.hydrated: bool` (False until ~3 frames after open); `App._hydrate_timer: float`.
 
-- [ ] **Step 1: Write the failing test (extend `tests/test_shell_icons.py`)**
+- [x] **Step 1: Write the failing test (extend `tests/test_shell_icons.py`)**
 
 ```python
 def test_app_hydration_flag():
@@ -1051,12 +1051,12 @@ def test_app_hydration_flag():
 
 The meaningful assertion lives in Step 4's headless integration check; the unit test above pins the flags' existence so future hydration logic has a stable contract.
 
-- [ ] **Step 2: Run to verify it fails**
+- [x] **Step 2: Run to verify it fails**
 
 Run: `py -3 -m pytest tests/test_shell_icons.py -v`
 Expected: FAIL — `App` has no `_hydrate_timer`/`hydrated`.
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 In `lionos/apps/base.py` `App.__init__`, add:
 
@@ -1111,7 +1111,7 @@ Add the placeholder helper (cached by size + theme):
         return s
 ```
 
-- [ ] **Step 4: Verify with headless integration**
+- [x] **Step 4: Verify with headless integration**
 
 Run: `LION_OS_HEADLESS=1 py -3 -c "
 import os
@@ -1133,7 +1133,7 @@ print('ok: hydration works')
 "` then `py -3 -m pytest tests/ -q`
 Expected: `ok: hydration works`; all tests pass.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add lionos/apps/base.py lionos/kernel.py tests/test_shell_icons.py
