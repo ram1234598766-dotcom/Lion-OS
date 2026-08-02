@@ -62,7 +62,7 @@ lionos
 ### Option 2 — Install from PyPI
 
 ```bash
-python -m pip install lion-os
+python -m pip install lion-os-desktop
 lionos
 ```
 
@@ -234,7 +234,7 @@ workflow run.
 Pre-built wheels are attached to [GitHub Releases](https://github.com/ram1234598766-dotcom/Lion-OS/releases):
 
 ```
-pip install https://github.com/ram1234598766-dotcom/Lion-OS/releases/download/v1.1.1/lion_os-1.1.1-py3-none-any.whl
+pip install https://github.com/ram1234598766-dotcom/Lion-OS/releases/download/v1.1.1/lion_os_desktop-1.1.1-py3-none-any.whl
 ```
 
 ---
