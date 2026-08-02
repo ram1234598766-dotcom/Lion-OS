@@ -36,7 +36,7 @@
     - `_mark(status, **kw)` helper.
     - every method default no-op/`True` except where overridden.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```python
 # tests/test_driver_framework.py
@@ -83,9 +83,9 @@ def test_configure_merges_and_applies():
     assert d.config["rate"] == 500
 ```
 
-- [ ] **Step 2: Run to verify it fails** — `py -3 -m pytest tests/test_driver_framework.py -v` → ImportError.
+- [x] **Step 2: Run to verify it fails** — `py -3 -m pytest tests/test_driver_framework.py -v` → ImportError.
 
-- [ ] **Step 3: Implement `framework.py`**
+- [x] **Step 3: Implement `framework.py`**
 
 ```python
 """Driver framework for Lion-OS.
@@ -169,9 +169,9 @@ class Driver:
         self.status.last_error = msg
 ```
 
-- [ ] **Step 4: Run to verify it passes** — `py -3 -m pytest tests/test_driver_framework.py -v` → 5 passed.
+- [x] **Step 4: Run to verify it passes** — `py -3 -m pytest tests/test_driver_framework.py -v` → 5 passed.
 
-- [ ] **Step 5: Create `lionos/drivers/__init__.py`**
+- [x] **Step 5: Create `lionos/drivers/__init__.py`**
 
 ```python
 """Driver framework + driver library for Lion-OS.
@@ -184,7 +184,7 @@ from .framework import Driver, DriverStatus
 __all__ = ["Driver", "DriverStatus"]
 ```
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add lionos/drivers/framework.py lionos/drivers/__init__.py tests/test_driver_framework.py
@@ -214,7 +214,7 @@ git commit -m "feat(drivers): Driver framework + DriverStatus lifecycle"
     - `auto_config_snapshot() -> dict` (written to `drivers.auto.json`)
     - `stop_all()`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```python
 # tests/test_driver_bus.py
@@ -269,9 +269,9 @@ def test_auto_config_snapshot():
     assert "base" in snap and snap["base"]["name"] == "base"
 ```
 
-- [ ] **Step 2: Run to verify it fails** — `py -3 -m pytest tests/test_driver_bus.py -v` → ImportError.
+- [x] **Step 2: Run to verify it fails** — `py -3 -m pytest tests/test_driver_bus.py -v` → ImportError.
 
-- [ ] **Step 3: Implement `bus.py`**
+- [x] **Step 3: Implement `bus.py`**
 
 ```python
 """Driver bus: registers drivers, orders by dependency, probes/auto-tunes/init/
@@ -427,9 +427,9 @@ class DriverBus:
         }
 ```
 
-- [ ] **Step 4: Run to verify it passes** — `py -3 -m pytest tests/test_driver_bus.py -v` → 5 passed.
+- [x] **Step 4: Run to verify it passes** — `py -3 -m pytest tests/test_driver_bus.py -v` → 5 passed.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add lionos/drivers/bus.py tests/test_driver_bus.py
@@ -454,7 +454,7 @@ git commit -m "feat(drivers): DriverBus with dependency order + auto-config + de
   - `MediaDriver` (`name="media"`) — `supports(path)` by extension; `open_audio(path)` uses `pygame.mixer.music.load`; `codecs()` returns supported list.
   - `NetworkDriver` (`name="network"`) — `probe()` returns True (even offline); `online()` does a cached connectivity check; `auto_tune()` returns `{"offline_ok": True}`.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```python
 # tests/test_core_drivers.py
@@ -503,9 +503,9 @@ def test_network_driver_online_is_bool():
     assert isinstance(d.online(), bool)
 ```
 
-- [ ] **Step 2: Run to verify it fails** — `py -3 -m pytest tests/test_core_drivers.py -v` → ImportError.
+- [x] **Step 2: Run to verify it fails** — `py -3 -m pytest tests/test_core_drivers.py -v` → ImportError.
 
-- [ ] **Step 3: Implement the 5 core drivers**
+- [x] **Step 3: Implement the 5 core drivers**
 
 `lionos/drivers/core/display.py`:
 
@@ -729,9 +729,9 @@ from .network import NetworkDriver
 CORE_DRIVERS = [DisplayDriver, AudioDriver, InputDriver, MediaDriver, NetworkDriver]
 ```
 
-- [ ] **Step 4: Run to verify it passes** — `py -3 -m pytest tests/test_core_drivers.py -v` → 5 passed.
+- [x] **Step 4: Run to verify it passes** — `py -3 -m pytest tests/test_core_drivers.py -v` → 5 passed.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add lionos/drivers/core/ tests/test_core_drivers.py
@@ -750,7 +750,7 @@ git commit -m "feat(drivers): 5 real core drivers (display/audio/input/media/net
 - Consumes: `Driver`.
 - Produces the first two library modules. Each driver is a small `Driver` subclass; `simulated=False` where genuinely functional, `True` otherwise. All `probe()` return True (they "work" without hardware), unless the backend (e.g. numpy) is missing.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```python
 # tests/test_library_storage_compute.py
@@ -789,9 +789,9 @@ def test_rng_entropy():
     assert len(d.random_bytes(16)) == 16
 ```
 
-- [ ] **Step 2: Run to verify it fails** — `py -3 -m pytest tests/test_library_storage_compute.py -v` → ImportError.
+- [x] **Step 2: Run to verify it fails** — `py -3 -m pytest tests/test_library_storage_compute.py -v` → ImportError.
 
-- [ ] **Step 3: Implement the two modules**
+- [x] **Step 3: Implement the two modules**
 
 `lionos/drivers/library/storage.py`:
 
@@ -950,9 +950,9 @@ LIBRARY_DRIVERS = [NVMeDriver, RamDiskDriver, RaidDriver, FloppyDriver, TapeDriv
                    SanDriver, FPUDriver, RNGDriver, QuantumDriver]
 ```
 
-- [ ] **Step 4: Run to verify it passes** — `py -3 -m pytest tests/test_library_storage_compute.py -v` → 5 passed.
+- [x] **Step 4: Run to verify it passes** — `py -3 -m pytest tests/test_library_storage_compute.py -v` → 5 passed.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add lionos/drivers/library/ tests/test_library_storage_compute.py
@@ -975,7 +975,7 @@ git commit -m "feat(drivers): storage + compute library drivers"
 - Consumes: `Driver` (Task 1), the module pattern from Task 4.
 - Produces every remaining driver from the spec's **Appendix A** catalog. Each is a small `Driver` subclass with `name`, `category`, `simulated`, `description`, `probe() -> True` (or backend guard), and one representative method/behavior. Simulated drivers default disabled.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```python
 # tests/test_library_all.py
@@ -1001,9 +1001,9 @@ def test_library_driver_registry_count():
     assert len(LIBRARY_DRIVERS) >= 60
 ```
 
-- [ ] **Step 2: Run to verify it fails** — `py -3 -m pytest tests/test_library_all.py -v` → ImportError / count fails.
+- [x] **Step 2: Run to verify it fails** — `py -3 -m pytest tests/test_library_all.py -v` → ImportError / count fails.
 
-- [ ] **Step 3: Implement the modules**
+- [x] **Step 3: Implement the modules**
 
 Each module follows this exact pattern (drivers are compact; a few lines each).
 Implement ALL of the following (they mirror Appendix A's catalog):
@@ -1028,9 +1028,9 @@ Implement ALL of the following (they mirror Appendix A's catalog):
 > `library/__init__.py` to include every class. `test_library_driver_registry_count`
 > enforces ≥60 drivers.
 
-- [ ] **Step 4: Run to verify it passes** — `py -3 -m pytest tests/test_library_all.py -v` → 3 passed.
+- [x] **Step 4: Run to verify it passes** — `py -3 -m pytest tests/test_library_all.py -v` → 3 passed.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add lionos/drivers/library/ tests/test_library_all.py
@@ -1054,7 +1054,7 @@ git commit -m "feat(drivers): full simulated driver library (storage→esoteric)
   - On `config.show_fps` (existing) the boot screen also prints probe lines; Devices app (Task 7) reads `os.drivers.device_tree()`.
   - `LionOS._write_driver_auto_config()` writes `~/.lionos/drivers.auto.json`.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```python
 # tests/test_kernel_drivers.py
@@ -1092,9 +1092,9 @@ def test_kernel_update_ticks_drivers():
     os_._update(os_._dt)   # must not raise with drivers running
 ```
 
-- [ ] **Step 2: Run to verify it fails** — `py -3 -m pytest tests/test_kernel_drivers.py -v` → ImportError (`build_driver_bus`).
+- [x] **Step 2: Run to verify it fails** — `py -3 -m pytest tests/test_kernel_drivers.py -v` → ImportError (`build_driver_bus`).
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 `lionos/drivers/__init__.py` (extend):
 
@@ -1156,9 +1156,9 @@ def build_driver_bus(config=None) -> DriverBus:
         self.drivers.update(dt)
 ```
 
-- [ ] **Step 4: Run to verify it passes** — `py -3 -m pytest tests/test_kernel_drivers.py -v` → 4 passed. Then full suite + smoke.
+- [x] **Step 4: Run to verify it passes** — `py -3 -m pytest tests/test_kernel_drivers.py -v` → 4 passed. Then full suite + smoke.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add lionos/drivers/__init__.py lionos/drivers/bus.py lionos/kernel.py lionos/config.py tests/test_kernel_drivers.py
@@ -1177,7 +1177,7 @@ git commit -m "feat(drivers): kernel boots driver bus + auto-config snapshot"
 - Consumes: `LionOS.drivers.device_tree()`, the `App` base.
 - Produces: `DevicesApp` (`name="Devices"`, `icon="Devices"` — already in `APP_ICONS`), rendering the device tree grouped by category with status badges, `[Enable/Disable]`, `[Re-probe]`, and a search box.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```python
 # tests/test_devices_app.py
@@ -1212,9 +1212,9 @@ def test_devices_app_launches_and_draws():
     pygame.display.flip()
 ```
 
-- [ ] **Step 2: Run to verify it fails** — `py -3 -m pytest tests/test_devices_app.py -v` → FAIL (not registered).
+- [x] **Step 2: Run to verify it fails** — `py -3 -m pytest tests/test_devices_app.py -v` → FAIL (not registered).
 
-- [ ] **Step 3: Implement `lionos/apps/devices.py`**
+- [x] **Step 3: Implement `lionos/apps/devices.py`**
 
 ```python
 """Devices & Drivers app — renders the driver device tree with controls."""
@@ -1321,9 +1321,9 @@ class DevicesApp(App):
 
 Register in `lionos/apps/__init__.py` (add `devices` import + `DevicesApp` to `register_all`).
 
-- [ ] **Step 4: Run to verify it passes** — `py -3 -m pytest tests/test_devices_app.py -v` → 2 passed. Then full suite + smoke.
+- [x] **Step 4: Run to verify it passes** — `py -3 -m pytest tests/test_devices_app.py -v` → 2 passed. Then full suite + smoke.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add lionos/apps/devices.py lionos/apps/__init__.py tests/test_devices_app.py
