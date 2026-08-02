@@ -31,7 +31,7 @@ class NetworkDriver(Driver):
     def _check(self) -> bool:
         try:
             import urllib.request
-            urllib.request.urlopen("https://pypi.org", timeout=2)
+            urllib.request.urlopen("https://pypi.org", timeout=2)  # nosec B310 — hardcoded https connectivity probe
             return True
         except Exception:
             return False

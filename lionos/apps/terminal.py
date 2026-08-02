@@ -273,7 +273,7 @@ class TerminalApp(App):
     def _run_shell(self, cmd):
         try:
             proc = subprocess.Popen(
-                cmd, shell=True, cwd=self.cwd, stdout=subprocess.PIPE,
+                cmd, shell=True, cwd=self.cwd, stdout=subprocess.PIPE,  # nosec B602 — terminal emulator; running shell commands is its purpose
                 stderr=subprocess.PIPE, text=True,
             )
             out, err = proc.communicate(timeout=10)

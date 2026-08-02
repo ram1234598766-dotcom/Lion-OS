@@ -48,7 +48,7 @@ class SubprocessPipe(Driver):
         required, since that enables command injection."""
         try:
             if shell and isinstance(cmd, str):
-                return subprocess.run(cmd, shell=True, capture_output=True,
+                return subprocess.run(cmd, shell=True, capture_output=True,  # nosec B602 — shell is opt-in only (terminal-style path); default shell=False
                                       text=True, timeout=timeout).stdout
             if isinstance(cmd, str):
                 cmd = cmd.split()

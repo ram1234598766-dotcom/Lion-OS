@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "lion-os-desktop"
-version = "2.0.5"
+version = "2.0.6"
 description = "Lion-OS - a full graphical desktop operating system that runs inside Python (Pygame). Boot, login, desktop, window manager and apps."
 readme = "README.md"
 requires-python = ">=3.9"

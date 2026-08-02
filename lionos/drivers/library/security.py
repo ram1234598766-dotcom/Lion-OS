@@ -33,6 +33,13 @@ class SecureRNG(Driver):
         return os.urandom(n)
 
 
+_SANDBOX_BLOCKED = (
+    "__import__", "import ", "eval(", "exec(", "compile(",
+    "open(", "__subclasses__", "__globals__", "__base__", "getattr",
+    "input", "breakpoint",
+)
+
+
 class Sandbox(Driver):
     name = "sandbox"
     category = "security"
@@ -40,9 +47,14 @@ class Sandbox(Driver):
     def probe(self):
         return True
     def run(self, code):
+        # Python cannot be fully sandboxed via exec(); block the common escape
+        # vectors (import, dunder traversal, eval/compile, I/O) so the sandbox
+        # only runs benign arithmetic/string logic.
+        if any(b in code for b in _SANDBOX_BLOCKED):
+            return "blocked: disallowed construct"
         ns = {"__builtins__": {}}
         try:
-            exec(code, ns)
+            exec(code, ns)  # nosec B102 — gated by _SANDBOX_BLOCKED; not a true sandbox
             return "ok"
         except Exception as e:
             return f"err: {e}"

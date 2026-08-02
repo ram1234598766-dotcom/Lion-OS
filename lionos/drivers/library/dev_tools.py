@@ -10,9 +10,15 @@ class JitProxy(Driver):
     def probe(self):
         return True
     def run(self, code):
-        ns = {"__builtins__": {}} if self.config["sandbox"] else {}
+        if self.config["sandbox"]:
+            from .security import _SANDBOX_BLOCKED
+            if any(b in code for b in _SANDBOX_BLOCKED):
+                return "blocked: disallowed construct"
+            ns = {"__builtins__": {}}
+        else:
+            ns = {}
         try:
-            exec(code, ns)
+            exec(code, ns)  # nosec B102 — gated by _SANDBOX_BLOCKED when sandboxed
             return "ok"
         except Exception as e:
             return f"err: {e}"
