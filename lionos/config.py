@@ -55,8 +55,12 @@ class LionConfig:
     lock_on_wake: bool = False
     session_resume: bool = True
     clipboard_enabled: bool = True
+    sound_enabled: bool = True
+    motion: str = "full"
+    accent_override: str = ""
     wizard_done: bool = False
     pinned_apps: list = field(default_factory=list)
+    statusline: list = field(default_factory=lambda: ["clock", "date", "theme"])
     mru_apps: list = field(default_factory=list)
     bookmarks: list = field(default_factory=list)
 

@@ -23,6 +23,7 @@ from .wizard import WIZARD_STEPS, load_profile, save_profile
 from . import activity as _activity
 from . import session as _session
 from .clipboard import Clipboard
+from .sound import SoundTheme
 from .wm import (Window, WindowManager, TITLEBAR_H,
                  WINDOW_STATE_MAXIMIZED, WINDOW_STATE_MINIMIZED)
 from .widgets import Menu, Toast, draw_app_tile, draw_glass_panel, rounded_rect
@@ -138,6 +139,9 @@ class LionOS:
         self.clipboard = Clipboard()
         self._summary = ""
         self._summary_t = 0.0
+        self.sound = SoundTheme(self.drivers.get("audio") if hasattr(self, "drivers") else None)
+        self.sound.enabled = self.config.sound_enabled
+        self.sound.set_volume(self.config.volume)
 
         # theme transition
         self._theme_from: Optional[Theme] = None
@@ -213,6 +217,7 @@ class LionOS:
         if cls.singleton:
             self.launched[name] = inst
         inst.on_open()
+        self.sound.play("open")
         _activity.log_event("app_launch", name)
         # remember app in MRU
         mru = list(self.config.mru_apps)
@@ -226,6 +231,7 @@ class LionOS:
     # ------------------------------------------------------------------ utils
     def show_toast(self, title, message, kind="info"):
         self.toasts.append(Toast(title, message, self.theme, kind=kind))
+        self.sound.play("toast")
         if len(self.toasts) > 4:
             self.toasts.pop(0)
         self._needs_redraw = True
@@ -346,6 +352,7 @@ class LionOS:
             self._update_boot(dt)
             if self._boot_ready:
                 self.booted = True
+                self.sound.play("boot")
                 self._needs_redraw = True
             return
 
