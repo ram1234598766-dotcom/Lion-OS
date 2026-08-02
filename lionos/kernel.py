@@ -245,6 +245,21 @@ class LionOS:
         self._wallpaper_key = None
         self._needs_redraw = True
 
+    def launcher_catalog(self):
+        """Data-driven app manifest rows for the catalog launcher."""
+        rows = []
+        for name, cls in self.apps_registry.all().items():
+            rows.append({
+                "name": name,
+                "desc": getattr(cls, "description", "") or "",
+                "version": getattr(cls, "version", "1.0"),
+                "category": getattr(cls, "category", "Utilities"),
+            })
+        return rows
+
+    def statusline_widgets(self):
+        return list(self.config.statusline)
+
     # ------------------------------------------------------------------ utils
     def show_toast(self, title, message, kind="info"):
         self.toasts.append(Toast(title, message, self.theme, kind=kind))
@@ -1285,7 +1300,7 @@ class LionOS:
             if x > self.screen_w - 260:
                 break
 
-        # clock
+        # clock (shifted left to make room for the system tray)
         clock_font = self.get_font(18)
         now = time.localtime()
         if self.config.clock_24h:
@@ -1296,9 +1311,51 @@ class LionOS:
         tc = self.theme.text
         t1 = clock_font.render(timestr, True, tc)
         t2 = clock_font.render(date, True, self.theme.text_dim)
-        tx = self.screen_w - t1.get_width() - 16
+        tx = self.screen_w - 160 - t1.get_width()
         self.screen.blit(t1, (tx, tb.y + 5))
         self.screen.blit(t2, (tx, tb.y + 24))
+        # statusline widgets toggled via config.statusline
+        wx = tx - 12
+        for widget in reversed(self.statusline_widgets()):
+            if widget == "theme":
+                tf = self.get_font(14)
+                tlbl = tf.render(self.theme.name, True, self.theme.accent)
+                wx -= tlbl.get_width() + 12
+                self.screen.blit(tlbl, (wx, tb.y + 15))
+            elif widget == "cpu":
+                try:
+                    import psutil as _ps
+                    cpu = _ps.cpu_percent(interval=None)
+                except Exception:
+                    cpu = 0.0
+                cf = self.get_font(14)
+                clbl = cf.render(f"CPU {cpu:.0f}%", True, self.theme.text_dim)
+                wx -= clbl.get_width() + 12
+                self.screen.blit(clbl, (wx, tb.y + 15))
+        # system tray
+        self._draw_tray(tb)
+
+    def _draw_tray(self, tb):
+        # network online/offline dot
+        net = self.drivers.get("network") if hasattr(self, "drivers") else None
+        online = bool(net and net.online())
+        pygame.draw.circle(self.screen,
+                           self.theme.success if online else self.theme.danger,
+                           (tb.right - 20, tb.y + 18), 5)
+        # sound toggle indicator
+        if self.sound and self.sound.enabled:
+            snd = pygame.Rect(tb.right - 52, tb.y + 8, 22, 20)
+            pygame.draw.arc(self.screen, self.theme.text, snd, -0.7, 0.7, 2)
+            pygame.draw.line(self.screen, self.theme.text,
+                             (snd.x + 2, snd.centery), (snd.x + 8, snd.centery), 2)
+        # notifications icon + unread dot
+        if self._notifications:
+            ntf = pygame.Rect(tb.right - 82, tb.y + 10, 22, 22)
+            pygame.draw.circle(self.screen, self.theme.accent, (ntf.right, ntf.y), 4)
+        # show-desktop
+        show = pygame.Rect(tb.right - 110, tb.y + 10, 22, 22)
+        pygame.draw.rect(self.screen, self.theme.text_dim,
+                         pygame.Rect(show.x + 4, show.y + 4, 14, 14), 1, border_radius=3)
 
     def _draw_start_button(self, r):
         if r.collidepoint(pygame.mouse.get_pos()):
