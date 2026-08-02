@@ -25,6 +25,7 @@ class SettingsApp(App):
         super().__init__(os, window)
         self.tab = "Appearance"     # Appearance | AI Assistant | System | About
         self.tabs = ["Appearance", "AI Assistant", "System", "About"]
+        self.sections = list(self.tabs)
         self.ai_provider = self.os.config.ai_provider
         self.ai_model = self.os.config.ai_model
         self.ai_endpoint = self.os.config.ai_endpoint
@@ -53,6 +54,24 @@ class SettingsApp(App):
                         return True
                 if self._toggle_res_collide(local_pos):
                     return True
+                # wallpaper + accent clicks
+                x = self.rect.x + 40
+                ry = self.rect.y + 190 + (len(THEME_NAMES) // 5) * 104
+                wy = ry + 62
+                ay = wy + 56
+                for i, wn in enumerate(self.os.wallpaper_names()):
+                    wr = pygame.Rect(x + i * 100, wy, 92, 40)
+                    if wr.collidepoint(local_pos):
+                        self.os.config_store.set(wallpaper=wn)
+                        self.os.config.wallpaper = wn
+                        self.os._wallpaper_key = None
+                        self.os._needs_redraw = True
+                        return True
+                for i, ac in enumerate(self._accents()):
+                    ar = pygame.Rect(x + i * 46, ay, 38, 38)
+                    if ar.collidepoint(local_pos):
+                        self.os.apply_accent(ac)
+                        return True
             if self.tab == "AI Assistant":
                 self._handle_ai_click(local_pos)
                 return True
@@ -68,6 +87,10 @@ class SettingsApp(App):
             self.scroll = max(0, min(120, self.scroll - event.y * 20))
             return True
         return False
+
+    def _accents(self):
+        return [(247, 148, 0), (0, 190, 255), (64, 200, 96),
+                (167, 94, 255), (236, 72, 138), (96, 130, 255)]
 
     def _toggle_res_collide(self, pos):
         # fullscreen toggle
@@ -231,6 +254,27 @@ class SettingsApp(App):
                                (tg.right - 10 if self.os.config.resolution == "fullscreen" else tg.left + 10, tg.centery), 8)
             note = small.render("Fullscreen applies after restart", True, self.theme.text_dim)
             surface.blit(note, (x, ry + 30))
+            # wallpaper gallery
+            wy = ry + 62
+            wimg = font.render("Wallpaper", True, self.theme.text)
+            surface.blit(wimg, (x, wy - 16))
+            for i, wn in enumerate(self.os.wallpaper_names()):
+                wr = pygame.Rect(x + i * 100, wy, 92, 40)
+                rounded_rect(surface, wr, 8,
+                             self.theme.accent if wn == self.os.config.wallpaper else self.theme.surface_alt)
+                wnimg = small.render(wn.title(), True, self.theme.text)
+                surface.blit(wnimg, wnimg.get_rect(center=wr.center))
+            # accent swatches
+            ay = wy + 56
+            aimg = font.render("Accent", True, self.theme.text)
+            surface.blit(aimg, (x, ay - 16))
+            ACCENTS = [(247, 148, 0), (0, 190, 255), (64, 200, 96),
+                       (167, 94, 255), (236, 72, 138), (96, 130, 255)]
+            for i, ac in enumerate(ACCENTS):
+                ar = pygame.Rect(x + i * 46, ay, 38, 38)
+                pygame.draw.circle(surface, ac, ar.center, 17)
+                if self.os.theme.accent == ac:
+                    pygame.draw.circle(surface, (255, 255, 255), ar.center, 17, 2)
 
         elif self.tab == "AI Assistant":
             py, my, ey, ky, sy = self._ai_fields()
@@ -300,6 +344,27 @@ class SettingsApp(App):
             rounded_rect(surface, tg, 11, self.theme.accent if self.os.config.clock_24h else self.theme.surface_alt)
             pygame.draw.circle(surface, (255, 255, 255),
                                (tg.right - 10 if self.os.config.clock_24h else tg.left + 10, tg.centery), 8)
+            # motion level
+            my = yy + 40
+            ml = font.render("Motion", True, self.theme.text)
+            surface.blit(ml, (x, my - 14))
+            for i, m in enumerate(("full", "reduced", "none")):
+                mr = pygame.Rect(x + 100 + i * 110, my - 16, 100, 30)
+                rounded_rect(surface, mr, 8,
+                             self.theme.accent if self.os.config.motion == m else self.theme.surface_alt)
+                mi = small.render(m.title(), True, self.theme.text)
+                surface.blit(mi, mi.get_rect(center=mr.center))
+            # sound + session-resume toggles
+            ty = my + 34
+            for label, key in (("Sound", "sound_enabled"), ("Session resume", "session_resume")):
+                l = font.render(label, True, self.theme.text)
+                surface.blit(l, (x, ty))
+                val = getattr(self.os.config, key)
+                tg2 = pygame.Rect(x + 340, ty - 4, 44, 22)
+                rounded_rect(surface, tg2, 11, self.theme.accent if val else self.theme.surface_alt)
+                pygame.draw.circle(surface, (255, 255, 255),
+                                   (tg2.right - 10 if val else tg2.left + 10, tg2.centery), 8)
+                ty += 30
             rb = pygame.Rect(x, yy + 160, 180, 36)
             rounded_rect(surface, rb, 8, self.theme.danger if len(self.theme.danger) == 3 else self.theme.danger)
             rimg = font.render("Reset Configuration", True, (255, 255, 255))
