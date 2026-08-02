@@ -55,6 +55,7 @@ class Window:
         self.workspace = 0            # virtual-desktop index
         self.anim_scale = 1.0
         self.anim_alpha = 255
+        self.anim_slide = 0.0
         self._anim_target = 1.0
         self._anim_kind = None        # None | "open" | "close" | "minimize" | "maximize"
         self._anim_t = 0.0
@@ -102,6 +103,7 @@ class Window:
         if kind == _ANIM_OPEN:
             self.anim_scale = 0.86 + 0.14 * ease
             self.anim_alpha = int(60 + 195 * ease)
+            self.anim_slide = (1.0 - ease) * 24
         elif kind == _ANIM_CLOSE:
             self.anim_scale = 1.0 - 0.16 * ease
             self.anim_alpha = int(255 * (1.0 - ease))

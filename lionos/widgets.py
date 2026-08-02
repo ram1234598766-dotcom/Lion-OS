@@ -25,6 +25,8 @@ Rect = pygame.Rect
 # Shared caches (avoid per-frame allocations)
 # ---------------------------------------------------------------------------
 _font_cache: dict = {}
+from .anim import ease_out_back
+
 _tile_cache: dict = {}
 _glass_cache: dict = {}
 
@@ -842,7 +844,7 @@ def draw_glass_panel(surface, rect, theme, radius=12, border=True):
 
 def draw_app_tile(surface, rect, glyph, theme, hovered=False, pressed=False,
                   selected=False, font_size=None, label=None,
-                  icon_cache=None, scene=None, scene_id=None):
+                  icon_cache=None, scene=None, scene_id=None, hover_t=0.0):
     """Draw a gradient app-icon tile, used across the desktop.
 
     The gradient base is cached per (size, colors) so desktop icons, launcher
@@ -851,6 +853,9 @@ def draw_app_tile(surface, rect, glyph, theme, hovered=False, pressed=False,
 
     When ``icon_cache`` and ``scene`` are provided, the procedural vector icon
     is drawn as the artwork; ``glyph`` is then only the emoji fallback.
+
+    ``hover_t`` (0..1) eases the icon up and adds a glow, giving tiles a
+    tactile, animated hover instead of a hard snap.
     """
     r = pygame.Rect(rect)
     radius = max(6, int(r.height * 0.22))
@@ -877,16 +882,27 @@ def draw_app_tile(surface, rect, glyph, theme, hovered=False, pressed=False,
     elif hovered or selected:
         pygame.draw.rect(surface, (255, 255, 255, 26), r, border_radius=radius)
     # Vector icon when available, else glyph fallback.
+    lift = 1.0 + 0.06 * ease_out_back(hover_t) if hover_t > 0 else 1.0
     if scene is not None and icon_cache is not None:
         pad = max(2, int(r.height * 0.08))
         inner = pygame.Rect(r.x + pad, r.y + pad, r.width - 2 * pad, r.height - 2 * pad)
         size = max(4, inner.width)
         img = icon_cache.render(scene, scene_id or "scene", size, theme)
+        if lift != 1.0:
+            img = pygame.transform.smoothscale(img, (max(4, int(img.get_width() * lift)),
+                                                    max(4, int(img.get_height() * lift))))
         surface.blit(img, img.get_rect(center=inner.center))
     else:
         f = cached_font(font_size or int(r.height * 0.62))
         img = f.render(glyph, True, (255, 255, 255))
         surface.blit(img, img.get_rect(center=r.center))
+    if hover_t > 0:
+        # soft accent glow ring that fades in with the hover
+        glow = pygame.Surface(r.size, pygame.SRCALPHA)
+        ga = int(70 * hover_t)
+        pygame.draw.circle(glow, theme.glow[:3] + (ga,), glow.get_rect().center,
+                           int(r.width * 0.55), 2)
+        surface.blit(glow, r.topleft)
     surface.set_clip(old)
     if label:
         lf = cached_font(15)

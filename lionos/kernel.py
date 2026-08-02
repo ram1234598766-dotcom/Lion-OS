@@ -29,6 +29,7 @@ from .wm import (Window, WindowManager, TITLEBAR_H,
 from .widgets import Menu, Toast, Notification, draw_app_tile, draw_glass_panel, rounded_rect
 from .icons import APP_ICONS, IconCache, glyph_scene
 from .loop import MAX_DT, FrameBudget, DirtyTracker, PerfCounters
+from .anim import HoverState
 from .drivers import build_driver_bus
 
 BOOT_LINES = [
@@ -94,6 +95,7 @@ class LionOS:
 
         self.clock = pygame.time.Clock()
         self.icon_cache = IconCache()
+        self._tile_hover: dict = {}
         self._frame_budget = FrameBudget(60)
         self._dirty = DirtyTracker()
         self._perf = PerfCounters()
@@ -254,6 +256,13 @@ class LionOS:
         self.wm.theme = self.theme
         self._wallpaper_key = None
         self._needs_redraw = True
+
+    def _hover_t(self, key, rect):
+        """Animated hover value (0..1) for an interactive tile."""
+        h = self._tile_hover.get(key)
+        if h is None:
+            h = self._tile_hover[key] = HoverState()
+        return h.update(self._dt, rect.collidepoint(pygame.mouse.get_pos()))
 
     def launcher_catalog(self):
         """Data-driven app manifest rows for the catalog launcher."""
@@ -1242,7 +1251,8 @@ class LionOS:
                           hovered=hovered, selected=selected,
                           icon_cache=self.icon_cache,
                           scene=APP_ICONS.get(app) or (glyph_scene(glyph) if glyph else None),
-                          scene_id=app)
+                          scene_id=app,
+                          hover_t=self._hover_t(("desk", label), tile))
             font = self.get_font(14)
             limg = font.render(label, True,
                                self.theme.text if selected else self.theme.text_dim)
@@ -1274,6 +1284,9 @@ class LionOS:
             scaled_rect = pygame.Rect(sx, sy, w, h)
         else:
             scaled_rect = rect
+        # open/close slide (slide up into place)
+        if win.anim_slide:
+            scaled_rect = scaled_rect.move(0, -int(win.anim_slide))
 
         win.ensure_chrome(self.theme, focused, font, self.config.font_size)
 
@@ -1538,7 +1551,8 @@ class LionOS:
                 draw_app_tile(self.screen, ic, app.icon, self.theme,
                               hovered=hovered, selected=(i == sel),
                               icon_cache=self.icon_cache,
-                              scene=APP_ICONS.get(app.name), scene_id=app.name)
+                              scene=APP_ICONS.get(app.name), scene_id=app.name,
+                              hover_t=self._hover_t(("lch", app.name), ic))
                 lfont = self.get_font(15)
                 limg = lfont.render(app.name, True, self.theme.text)
                 self.screen.blit(limg, limg.get_rect(midtop=(tile.centerx, ic.bottom + 8)))
