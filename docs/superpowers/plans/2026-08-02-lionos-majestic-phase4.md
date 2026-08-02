@@ -30,7 +30,7 @@
   - `SoundTheme` class wrapping the audio driver: `__init__(self, audio)`; `play(id)` maps ids to `audio.play_sfx`; `set_volume(v)`; `enabled` flag.
   - Kernel: `self.sound: SoundTheme`; calls `self.sound.play("open")` on window open, `"close"` on close, `"toast"` on toast, `"boot"` once booted.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```python
 # tests/test_sound.py
@@ -62,9 +62,9 @@ def test_sound_disabled_noop():
     assert a.calls == []
 ```
 
-- [ ] **Step 2: Run to verify it fails** — `py -3 -m pytest tests/test_sound.py -v` → ImportError.
+- [x] **Step 2: Run to verify it fails** — `py -3 -m pytest tests/test_sound.py -v` → ImportError.
 
-- [ ] **Step 3: Implement `lionos/sound.py`**
+- [x] **Step 3: Implement `lionos/sound.py`**
 
 ```python
 """Sound theme — plays guarded UI sounds through the audio driver."""
@@ -91,9 +91,9 @@ class SoundTheme:
             pass
 ```
 
-- [ ] **Step 4: Run to verify it passes** — `py -3 -m pytest tests/test_sound.py -v` → 2 passed.
+- [x] **Step 4: Run to verify it passes** — `py -3 -m pytest tests/test_sound.py -v` → 2 passed.
 
-- [ ] **Step 5: Wire into kernel**
+- [x] **Step 5: Wire into kernel**
 
 `lionos/config.py` add: `sound_enabled: bool = True`.
 
@@ -105,7 +105,7 @@ class SoundTheme:
 - on window open (in `launch`, after app created) → `self.sound.play("open")`.
 - on window close → `self.sound.play("close")` (in the remove path).
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add lionos/sound.py lionos/kernel.py lionos/config.py tests/test_sound.py
@@ -126,7 +126,7 @@ git commit -m "feat(sound): guarded sound theme on the audio driver"
   - `NotificationCenter` widget: `update(dt)`, `draw(surface, rect, theme)`, `clear_all()`, list of active notifications.
   - Taskbar/launcher icon badge dots from unread counts.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```python
 # tests/test_notifications.py
@@ -153,9 +153,9 @@ def test_notify_clear_all():
     assert len(os_._notifications) == 0
 ```
 
-- [ ] **Step 2: Run to verify it fails** — `py -3 -m pytest tests/test_notifications.py -v` → AttributeError.
+- [x] **Step 2: Run to verify it fails** — `py -3 -m pytest tests/test_notifications.py -v` → AttributeError.
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 `lionos/widgets.py` add:
 
@@ -182,9 +182,9 @@ class Notification:
 - draw a notification-center panel when open (list notifications, click to clear).
 - `self.sound.play("toast")` in `notify`.
 
-- [ ] **Step 4: Run to verify it passes** — `py -3 -m pytest tests/test_notifications.py -v` → 2 passed. Full suite + smoke.
+- [x] **Step 4: Run to verify it passes** — `py -3 -m pytest tests/test_notifications.py -v` → 2 passed. Full suite + smoke.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add lionos/widgets.py lionos/kernel.py tests/test_notifications.py
@@ -205,7 +205,7 @@ git commit -m "feat(notifications): notification center + notify API"
   - `kernel.wallpaper_names()`, `kernel.apply_accent(rgb)`, `kernel.motion_ok()` (helper to gate animations).
   - `theme.accented(rgb)` returns a theme copy with accent/accent2/icon gradients overridden.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```python
 # tests/test_theme_motion.py
@@ -232,9 +232,9 @@ def test_kernel_apply_accent():
     assert os_.theme.accent == (0, 200, 0)
 ```
 
-- [ ] **Step 2: Run to verify it fails** — `py -3 -m pytest tests/test_theme_motion.py -v` → ImportError (`accented`).
+- [x] **Step 2: Run to verify it fails** — `py -3 -m pytest tests/test_theme_motion.py -v` → ImportError (`accented`).
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 `lionos/theme.py` add:
 
@@ -261,9 +261,9 @@ def accented(theme, rgb):
 - `motion_ok()`: return `self.config.motion != "none"` and `self.config.anim_enabled`.
 - Gate window animations (`begin_anim`) and theme transitions behind `motion_ok()`.
 
-- [ ] **Step 4: Run to verify it passes** — `py -3 -m pytest tests/test_theme_motion.py -v` → 3 passed. Full suite + smoke.
+- [x] **Step 4: Run to verify it passes** — `py -3 -m pytest tests/test_theme_motion.py -v` → 3 passed. Full suite + smoke.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add lionos/theme.py lionos/kernel.py lionos/config.py tests/test_theme_motion.py
@@ -285,7 +285,7 @@ git commit -m "feat(chrome): wallpaper gallery + accent picker + motion setting"
   - System tray: `_draw_tray()` — network online/offline dot, sound toggle, notifications open, show-desktop.
   - Statusline widgets: clock/date/theme/CPU toggles via `config.statusline: list[str]`.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```python
 # tests/test_catalog_tray.py
@@ -313,9 +313,9 @@ def test_statusline_config():
     assert os_.statusline_widgets() == ["clock", "date", "theme"]
 ```
 
-- [ ] **Step 2: Run to verify it fails** — `py -3 -m pytest tests/test_catalog_tray.py -v` → AttributeError.
+- [x] **Step 2: Run to verify it fails** — `py -3 -m pytest tests/test_catalog_tray.py -v` → AttributeError.
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 `lionos/config.py` add: `statusline: list = field(default_factory=lambda: ["clock", "date", "theme"])`.
 
@@ -326,9 +326,9 @@ def test_statusline_config():
 - `_draw_tray()`: draw network dot (from `self.drivers.get("network").online()`), sound toggle icon, notifications icon, show-desktop.
 - Extend `_draw_taskbar` to include the tray + statusline widgets (clock/date already there; add theme + CPU from psutil).
 
-- [ ] **Step 4: Run to verify it passes** — `py -3 -m pytest tests/test_catalog_tray.py -v` → 2 passed. Full suite + smoke.
+- [x] **Step 4: Run to verify it passes** — `py -3 -m pytest tests/test_catalog_tray.py -v` → 2 passed. Full suite + smoke.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add lionos/kernel.py lionos/config.py tests/test_catalog_tray.py
@@ -347,7 +347,7 @@ git commit -m "feat(chrome): catalog launcher + system tray + statusline widgets
 **Interfaces:**
 - Produces: `HelpApp` (`name="Help"`, `icon="Help"`), rendering a searchable catalog of every app's name + description + tips.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```python
 # tests/test_help_app.py
@@ -381,9 +381,9 @@ def test_help_app_launches_and_draws():
     pygame.display.flip()
 ```
 
-- [ ] **Step 2: Run to verify it fails** — `py -3 -m pytest tests/test_help_app.py -v` → FAIL (not registered).
+- [x] **Step 2: Run to verify it fails** — `py -3 -m pytest tests/test_help_app.py -v` → FAIL (not registered).
 
-- [ ] **Step 3: Implement `lionos/apps/help.py`**
+- [x] **Step 3: Implement `lionos/apps/help.py`**
 
 ```python
 """Help app — a searchable catalog of every built-in app."""
@@ -450,9 +450,9 @@ class HelpApp(App):
 
 Register in `apps/__init__.py`.
 
-- [ ] **Step 4: Run to verify it passes** — `py -3 -m pytest tests/test_help_app.py -v` → 2 passed. Full suite + smoke.
+- [x] **Step 4: Run to verify it passes** — `py -3 -m pytest tests/test_help_app.py -v` → 2 passed. Full suite + smoke.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add lionos/apps/help.py lionos/apps/__init__.py tests/test_help_app.py
