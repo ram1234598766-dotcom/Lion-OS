@@ -116,6 +116,8 @@ class LionOS:
         self.launcher_filter = ""
         self.launcher_category = "All"
         self.workspace = 0
+        self.search_open = False
+        self.search_query = ""
         self._launcher_idx = 0
         self.power_menu_open = False
         self.context_menu = None           # (pos, items)
@@ -266,6 +268,58 @@ class LionOS:
     def set_workspace(self, n):
         self.workspace = max(0, min(WORKSPACE_COUNT - 1, int(n)))
         self._needs_redraw = True
+
+    def toggle_search(self):
+        self.search_open = not self.search_open
+        self.search_query = ""
+        self._needs_redraw = True
+
+    def _handle_search_event(self, event):
+        if event.type == pygame.KEYDOWN:
+            if event.key in (pygame.K_ESCAPE, pygame.K_F2):
+                self.toggle_search()
+            elif event.key in (pygame.K_RETURN, pygame.K_KP_ENTER):
+                results = self.search_results()
+                if results:
+                    r = results[0]
+                    if r["kind"] == "app":
+                        self.launch(r["target"])
+                    elif r["kind"] == "setting":
+                        self.launch("Settings")
+                    self.toggle_search()
+            elif event.key == pygame.K_BACKSPACE:
+                self.search_query = self.search_query[:-1]
+        elif getattr(event, "unicode", "") and event.unicode.isprintable():
+            self.search_query += event.unicode
+
+    def search_results(self):
+        from .search import global_search
+        return global_search(self.search_query, self)
+
+    def _draw_search(self):
+        if not self.search_open:
+            return
+        dim = self._dim_surf
+        dim.fill((8, 8, 14, 210))
+        self.screen.blit(dim, (0, 0))
+        cx = self.screen_w // 2
+        box = pygame.Rect(cx - 260, 120, 520, 46)
+        pygame.draw.rect(self.screen, self.theme.surface, box, border_radius=12)
+        pygame.draw.rect(self.screen, self.theme.accent, box, 2, border_radius=12)
+        font = self.get_font(22)
+        txt = self.search_query or "Search apps, settings, notes…"
+        img = font.render(txt, True, self.theme.text if self.search_query else self.theme.text_dim)
+        self.screen.blit(img, (box.x + 16, box.centery - img.get_height() // 2))
+        y = box.bottom + 12
+        results = self.search_results()[:8]
+        for r in results:
+            row = pygame.Rect(cx - 260, y, 520, 34)
+            pygame.draw.rect(self.screen, self.theme.surface_alt, row, border_radius=8)
+            t = font.render(r["title"], True, self.theme.text)
+            self.screen.blit(t, (row.x + 12, row.y + 6))
+            s = self.get_font(14).render(r["source"], True, self.theme.accent)
+            self.screen.blit(s, (row.right - 12 - s.get_width(), row.y + 9))
+            y += 40
 
     def tile_window(self, direction):
         win = self.wm.focused
@@ -545,6 +599,14 @@ class LionOS:
             return
 
         self._needs_redraw = True
+
+        # global search (F2 opens, Esc closes)
+        if self.search_open:
+            self._handle_search_event(event)
+            return
+        if event.type == pygame.KEYDOWN and event.key == pygame.K_F2:
+            self.toggle_search()
+            return
 
         # context menu
         if self.context_menu:
@@ -1038,6 +1100,7 @@ class LionOS:
         self._draw_desktop_icons()
         self._draw_windows()
         self._draw_launcher()
+        self._draw_search()
         self._draw_power_menu()
         self._draw_alt_tab()
         self._draw_context_menu()
