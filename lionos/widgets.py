@@ -42,6 +42,15 @@ def cached_font(size: int, bold=False):
     return f
 
 
+def clear_font_cache():
+    """Drop all cached Font objects.
+
+    pygame.Font instances become invalid once the font module is quit (e.g.
+    after ``pygame.quit()``); re-initializing the module does NOT resurrect
+    them. Call this before re-initializing so fresh fonts are created."""
+    _font_cache.clear()
+
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -818,12 +827,16 @@ def draw_glass_panel(surface, rect, theme, radius=12, border=True):
 
 
 def draw_app_tile(surface, rect, glyph, theme, hovered=False, pressed=False,
-                  selected=False, font_size=None, label=None):
-    """Draw a gradient app-icon tile with a glyph, used across the desktop.
+                  selected=False, font_size=None, label=None,
+                  icon_cache=None, scene=None, scene_id=None):
+    """Draw a gradient app-icon tile, used across the desktop.
 
     The gradient base is cached per (size, colors) so desktop icons, launcher
     tiles and taskbar icons reuse one surface instead of allocating a new
     gradient (and a new font) on every frame.
+
+    When ``icon_cache`` and ``scene`` are provided, the procedural vector icon
+    is drawn as the artwork; ``glyph`` is then only the emoji fallback.
     """
     r = pygame.Rect(rect)
     radius = max(6, int(r.height * 0.22))
@@ -849,9 +862,17 @@ def draw_app_tile(surface, rect, glyph, theme, hovered=False, pressed=False,
         pygame.draw.rect(surface, (0, 0, 0, 40), r, border_radius=radius)
     elif hovered or selected:
         pygame.draw.rect(surface, (255, 255, 255, 26), r, border_radius=radius)
-    f = cached_font(font_size or int(r.height * 0.62))
-    img = f.render(glyph, True, (255, 255, 255))
-    surface.blit(img, img.get_rect(center=r.center))
+    # Vector icon when available, else glyph fallback.
+    if scene is not None and icon_cache is not None:
+        pad = max(2, int(r.height * 0.08))
+        inner = pygame.Rect(r.x + pad, r.y + pad, r.width - 2 * pad, r.height - 2 * pad)
+        size = max(4, inner.width)
+        img = icon_cache.render(scene, scene_id or "scene", size, theme)
+        surface.blit(img, img.get_rect(center=inner.center))
+    else:
+        f = cached_font(font_size or int(r.height * 0.62))
+        img = f.render(glyph, True, (255, 255, 255))
+        surface.blit(img, img.get_rect(center=r.center))
     surface.set_clip(old)
     if label:
         lf = cached_font(15)

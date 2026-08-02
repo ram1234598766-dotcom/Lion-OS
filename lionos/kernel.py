@@ -22,6 +22,7 @@ from .theme import Theme, THEMES, blend
 from .wm import (Window, WindowManager, TITLEBAR_H,
                  WINDOW_STATE_MAXIMIZED, WINDOW_STATE_MINIMIZED)
 from .widgets import Menu, Toast, draw_app_tile, draw_glass_panel, rounded_rect
+from .icons import APP_ICONS, IconCache, glyph_scene
 
 BOOT_LINES = [
     ("Lion-OS Kernel v" + __version__, True),
@@ -73,6 +74,7 @@ class LionOS:
         self.screen_rect = self.screen.get_rect()
 
         self.clock = pygame.time.Clock()
+        self.icon_cache = IconCache()
         self.running = True
         self.booted = False
         self.logged_in = False
@@ -835,7 +837,10 @@ class LionOS:
             selected = self._desktop_sel == label
             tile = pygame.Rect(rect.x, rect.y, rect.width, rect.height - 22)
             draw_app_tile(self.screen, tile, glyph, self.theme,
-                          hovered=hovered, selected=selected)
+                          hovered=hovered, selected=selected,
+                          icon_cache=self.icon_cache,
+                          scene=APP_ICONS.get(app) or (glyph_scene(glyph) if glyph else None),
+                          scene_id=app)
             font = self.get_font(14)
             limg = font.render(label, True,
                                self.theme.text if selected else self.theme.text_dim)
@@ -1055,7 +1060,9 @@ class LionOS:
                 ic = pygame.Rect(cx + 18, cy + 12, 60, 60)
                 hovered = tile.collidepoint(pygame.mouse.get_pos())
                 draw_app_tile(self.screen, ic, app.icon, self.theme,
-                              hovered=hovered, selected=(i == sel))
+                              hovered=hovered, selected=(i == sel),
+                              icon_cache=self.icon_cache,
+                              scene=APP_ICONS.get(app.name), scene_id=app.name)
                 lfont = self.get_font(15)
                 limg = lfont.render(app.name, True, self.theme.text)
                 self.screen.blit(limg, limg.get_rect(midtop=(tile.centerx, ic.bottom + 8)))
@@ -1090,7 +1097,9 @@ class LionOS:
             cls = self.apps_registry.get(name)
             tile = pygame.Rect(x, 212, 40, 40)
             draw_app_tile(self.screen, tile, cls.icon, self.theme,
-                          hovered=tile.collidepoint(pygame.mouse.get_pos()))
+                          hovered=tile.collidepoint(pygame.mouse.get_pos()),
+                          icon_cache=self.icon_cache,
+                          scene=APP_ICONS.get(name), scene_id=name)
             x += 46
 
     def _draw_power_menu(self):
