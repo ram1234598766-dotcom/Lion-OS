@@ -52,6 +52,7 @@ class Window:
         self.minimizable = True
         self.snapped = False          # "left" | "right" | "tl" ... | None
         self.visible = True
+        self.workspace = 0            # virtual-desktop index
         self.anim_scale = 1.0
         self.anim_alpha = 255
         self._anim_target = 1.0
@@ -319,6 +320,10 @@ class WindowManager:
         self.alt_tab_active = False
         self._alt_tab_idx = 0
         self._alt_tab_order: List[Window] = []
+
+    def windows_in(self, ws: int):
+        """Windows belonging to a given workspace."""
+        return [w for w in self.windows if w.workspace == ws]
 
     def set_screen(self, rect):
         self.screen_rect = rect

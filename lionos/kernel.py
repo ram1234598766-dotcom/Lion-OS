@@ -59,6 +59,8 @@ DESKTOP_START = 16
 
 THEME_TRANSITION_TIME = 0.4
 
+WORKSPACE_COUNT = 4
+
 
 class LionOS:
     """The main desktop environment."""
@@ -113,6 +115,7 @@ class LionOS:
         self.launcher_search = ""
         self.launcher_filter = ""
         self.launcher_category = "All"
+        self.workspace = 0
         self._launcher_idx = 0
         self.power_menu_open = False
         self.context_menu = None           # (pos, items)
@@ -259,6 +262,33 @@ class LionOS:
 
     def statusline_widgets(self):
         return list(self.config.statusline)
+
+    def set_workspace(self, n):
+        self.workspace = max(0, min(WORKSPACE_COUNT - 1, int(n)))
+        self._needs_redraw = True
+
+    def tile_window(self, direction):
+        win = self.wm.focused
+        if win is None:
+            return
+        sr = self.screen_rect
+        hw, hh = sr.width // 2, sr.height // 2
+        if direction == "left":
+            win.rect = pygame.Rect(sr.x, sr.y, hw, sr.height)
+        elif direction == "right":
+            win.rect = pygame.Rect(sr.x + hw, sr.y, hw, sr.height)
+        elif direction == "up":
+            win.rect = pygame.Rect(sr.x, sr.y, sr.width, hh)
+        elif direction == "down":
+            win.rect = pygame.Rect(sr.x, sr.y + hh, sr.width, hh)
+        elif direction == "center":
+            win.rect = pygame.Rect(sr.x + sr.width // 4, sr.y + sr.height // 4,
+                                   sr.width // 2, sr.height // 2)
+        else:
+            return
+        win.restore_rect = pygame.Rect(win.rect)
+        self._dirty.mark(win.rect)
+        self._needs_redraw = True
 
     # ------------------------------------------------------------------ utils
     def show_toast(self, title, message, kind="info"):
@@ -684,7 +714,7 @@ class LionOS:
                     "minimized": win.state == WINDOW_STATE_MINIMIZED,
                 })
         return {"windows": windows, "theme": self.config.theme,
-                "workspace": getattr(self, "_workspace", 0)}
+                "workspace": self.workspace}
 
     def _restore_session(self, data):
         if not data or not data.get("windows"):
@@ -1118,9 +1148,11 @@ class LionOS:
             self.screen.blit(limg, limg.get_rect(midtop=(tile.centerx, tile.bottom + 6)))
 
     def _draw_windows(self):
-        # draw from back to front
+        # draw from back to front, only the active workspace
         for win in self.wm.windows:
             if not win.visible or win.state == WINDOW_STATE_MINIMIZED:
+                continue
+            if win.workspace != self.workspace:
                 continue
             self._draw_window(win)
         self.wm.draw_snap_preview(self.screen, self.theme)
