@@ -33,7 +33,7 @@
   - `recover_session() -> dict | None` (falls back to newest checkpoint)
   - `cleanup_session() -> None` (removes current + checkpoints)
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```python
 # tests/test_session.py
@@ -74,9 +74,9 @@ def test_recover_falls_back_to_checkpoint(tmp_path):
     assert S.recover_session() == {"n": 1}
 ```
 
-- [ ] **Step 2: Run to verify it fails** — `py -3 -m pytest tests/test_session.py -v` → ImportError.
+- [x] **Step 2: Run to verify it fails** — `py -3 -m pytest tests/test_session.py -v` → ImportError.
 
-- [ ] **Step 3: Implement `lionos/session.py`**
+- [x] **Step 3: Implement `lionos/session.py`**
 
 ```python
 """Session persistence — minimal desktop-state snapshots with crash recovery.
@@ -163,9 +163,9 @@ def cleanup_session() -> None:
             os.remove(path)
 ```
 
-- [ ] **Step 4: Run to verify it passes** — `py -3 -m pytest tests/test_session.py -v` → 5 passed.
+- [x] **Step 4: Run to verify it passes** — `py -3 -m pytest tests/test_session.py -v` → 5 passed.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add lionos/session.py tests/test_session.py
@@ -188,7 +188,7 @@ git commit -m "feat(session): session snapshots + crash-recovery checkpoints"
   - `app_counts() -> dict[str, int]` (per-app launch counts)
   - `session_summary() -> str | None` (e.g. "Yesterday: Terminal ×3, switched to Sunset")
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```python
 # tests/test_activity.py
@@ -219,9 +219,9 @@ def test_session_summary(tmp_path, monkeypatch):
     assert "Terminal" in s and "Notes" in s
 ```
 
-- [ ] **Step 2: Run to verify it fails** — `py -3 -m pytest tests/test_activity.py -v` → ImportError.
+- [x] **Step 2: Run to verify it fails** — `py -3 -m pytest tests/test_activity.py -v` → ImportError.
 
-- [ ] **Step 3: Implement `lionos/activity.py`**
+- [x] **Step 3: Implement `lionos/activity.py`**
 
 ```python
 """Append-only activity log — drives launcher Recents + Session Summary."""
@@ -289,9 +289,9 @@ def session_summary() -> str:
     return f"Yesterday: {top}"
 ```
 
-- [ ] **Step 4: Run to verify it passes** — `py -3 -m pytest tests/test_activity.py -v` → 3 passed.
+- [x] **Step 4: Run to verify it passes** — `py -3 -m pytest tests/test_activity.py -v` → 3 passed.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add lionos/activity.py tests/test_activity.py
@@ -311,7 +311,7 @@ git commit -m "feat(activity): append-only activity log + recents/summary"
   - `Clipboard` class with `copy(kind, value)`, `paste()`, `history() -> list`, `clear()`.
   - Persists a bounded history ring to `~/.lionos/clipboard.jsonl`.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```python
 # tests/test_clipboard.py
@@ -339,9 +339,9 @@ def test_clear(tmp_path, monkeypatch):
     assert cb.paste() == ""
 ```
 
-- [ ] **Step 2: Run to verify it fails** — `py -3 -m pytest tests/test_clipboard.py -v` → ImportError.
+- [x] **Step 2: Run to verify it fails** — `py -3 -m pytest tests/test_clipboard.py -v` → ImportError.
 
-- [ ] **Step 3: Implement `lionos/clipboard.py`**
+- [x] **Step 3: Implement `lionos/clipboard.py`**
 
 ```python
 """Cross-app clipboard with a bounded, persisted history ring."""
@@ -400,9 +400,9 @@ class Clipboard:
         self._persist()
 ```
 
-- [ ] **Step 4: Run to verify it passes** — `py -3 -m pytest tests/test_clipboard.py -v` → 3 passed.
+- [x] **Step 4: Run to verify it passes** — `py -3 -m pytest tests/test_clipboard.py -v` → 3 passed.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add lionos/clipboard.py tests/test_clipboard.py
@@ -425,7 +425,7 @@ git commit -m "feat(clipboard): clipboard + bounded persisted history ring"
   - `WIZARD_STEPS = ["name", "theme", "pin", "matters"]`
   - Kernel: `self.wizard_active`, `self._wizard_step`, `self._wizard_input`; the login screen shows the wizard on first boot (when `not config.wizard_done`); step transitions on Enter; completing step 4 saves `profile.json` + sets `wizard_done`.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```python
 # tests/test_wizard.py
@@ -444,9 +444,9 @@ def test_profile_step_constants():
     assert W.WIZARD_STEPS == ["name", "theme", "pin", "matters"]
 ```
 
-- [ ] **Step 2: Run to verify it fails** — `py -3 -m pytest tests/test_wizard.py -v` → ImportError.
+- [x] **Step 2: Run to verify it fails** — `py -3 -m pytest tests/test_wizard.py -v` → ImportError.
 
-- [ ] **Step 3: Implement `lionos/wizard.py`**
+- [x] **Step 3: Implement `lionos/wizard.py`**
 
 ```python
 """First-boot wizard — scaffolds ~/.lionos/profile.json."""
@@ -490,9 +490,9 @@ def save_profile(data: dict) -> None:
     os.replace(tmp, profile_path())
 ```
 
-- [ ] **Step 4: Run to verify it passes** — `py -3 -m pytest tests/test_wizard.py -v` → 3 passed.
+- [x] **Step 4: Run to verify it passes** — `py -3 -m pytest tests/test_wizard.py -v` → 3 passed.
 
-- [ ] **Step 5: Kernel integration (wizard screen)**
+- [x] **Step 5: Kernel integration (wizard screen)**
 
 In `lionos/config.py` `LionConfig`, add fields:
 
@@ -527,7 +527,7 @@ In `_update`, in the login branch, when `self.wizard_active`, handle Enter to ad
 
 (Exact wiring follows the login-screen pattern; the wizard renders via a new `_draw_wizard()` called from `_draw_login` when active.)
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add lionos/wizard.py lionos/config.py lionos/kernel.py tests/test_wizard.py
@@ -550,7 +550,7 @@ git commit -m "feat(wizard): first-boot wizard + profile.json scaffold"
   - Activity instrumentation: app launch/close/theme-change/screenshot events; launcher **Recents** row + **Session Summary** card at login.
   - `LionOS.clipboard: Clipboard`; a `SUPER+V` clipboard-history palette; helper `os.clipboard_copy(value)` / `os.clipboard_paste()` used by Text Editor/Notes/Terminal.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```python
 # tests/test_kernel_persistence.py
@@ -583,9 +583,9 @@ def test_session_save_restore_roundtrip():
     assert any(w.app.name == "Terminal" for w in os_.wm.windows)
 ```
 
-- [ ] **Step 2: Run to verify it fails** — `py -3 -m pytest tests/test_kernel_persistence.py -v` → AttributeError (`_collect_session`).
+- [x] **Step 2: Run to verify it fails** — `py -3 -m pytest tests/test_kernel_persistence.py -v` → AttributeError (`_collect_session`).
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 `lionos/config.py` `LionConfig` add: `session_resume: bool = True`, `clipboard_enabled: bool = True`.
 
@@ -660,9 +660,9 @@ def test_session_save_restore_roundtrip():
 
 - launcher **Recents**: `_draw_launcher_recent` already reads `config.mru_apps`; extend to fall back to `activity.app_counts()` keys. Session **Summary card**: after login, if `activity.session_summary()` non-empty, show a fading card (store `self._summary`, `self._summary_t`; draw in `_draw`).
 
-- [ ] **Step 4: Run to verify it passes** — `py -3 -m pytest tests/test_kernel_persistence.py -v` → 2 passed. Full suite + smoke.
+- [x] **Step 4: Run to verify it passes** — `py -3 -m pytest tests/test_kernel_persistence.py -v` → 2 passed. Full suite + smoke.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add lionos/kernel.py lionos/config.py tests/test_kernel_persistence.py
