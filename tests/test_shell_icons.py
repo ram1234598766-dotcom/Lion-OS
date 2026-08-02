@@ -36,3 +36,15 @@ def test_draw_app_tile_falls_back_to_glyph_without_scene(surf):
     cache = IconCache()
     draw_app_tile(surf, pygame.Rect(0, 0, 32, 32), "☺", THEMES["dark"], icon_cache=cache)
     # should not raise
+
+
+def test_app_hydration_flag():
+    from lionos.apps.base import App
+    a = object.__new__(App)   # bare instance: we only test the timer contract
+    a.hydrated = False
+    a._hydrate_timer = 0.0
+    for _ in range(4):
+        a.step_hydration(0.016)   # 0.064s total > 0.05s threshold
+    assert a.hydrated is True
+    a.step_hydration(0.016)       # stays hydrated
+    assert a.hydrated is True

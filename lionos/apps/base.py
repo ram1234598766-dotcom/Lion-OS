@@ -40,6 +40,8 @@ class App:
         self.rect = self.window.content_rect
         self._last = pygame.Rect(self.rect)
         self.closed = False
+        self.hydrated = False        # two-phase startup: content ready after ~3 frames
+        self._hydrate_timer = 0.0
 
     # -- lifecycle ---------------------------------------------------------
     def on_open(self):
@@ -85,6 +87,14 @@ class App:
 
     def draw(self, surface: pygame.Surface, rect: pygame.Rect):
         pass
+
+    def step_hydration(self, dt: float):
+        """Advance two-phase startup: content becomes available after a short
+        structural pass (~3 frames), so window chrome appears instantly."""
+        if not self.hydrated:
+            self._hydrate_timer += dt
+            if self._hydrate_timer >= 0.05:
+                self.hydrated = True
 
     # -- helpers ---------------------------------------------------------------
     def set_title(self, title: str):

@@ -154,6 +154,7 @@ class LionOS:
         self._fade_surf = pygame.Surface((self.screen_w, self.screen_h), pygame.SRCALPHA)
         self._taskbar_surf = pygame.Surface((self.screen_w, 46), pygame.SRCALPHA)
         self._window_fade_cache: Dict[tuple, pygame.Surface] = {}
+        self._content_ph_cache: Dict[tuple, pygame.Surface] = {}
         self._tooltip_surf = None      # reusable tooltip background
 
         # hidden for testing
@@ -354,6 +355,7 @@ class LionOS:
                     self.launched.pop(inst.window.app.name, None)
                 self._needs_redraw = True
                 continue
+            inst.step_hydration(dt)
             if inst.window.state != WINDOW_STATE_MINIMIZED:
                 inst.update(dt)
             # window content rect may have changed
@@ -918,16 +920,22 @@ class LionOS:
         cr = pygame.Rect(scaled_rect.x, scaled_rect.y + TITLEBAR_H,
                          scaled_rect.width, max(0, scaled_rect.height - TITLEBAR_H))
         if cr.width > 0 and cr.height > 0 and win.app:
-            clip = pygame.Rect(cr)
-            old = self.screen.get_clip()
-            self.screen.set_clip(clip)
-            try:
-                win.app.draw(self.screen, cr)
-            except Exception as e:
-                import traceback
-                traceback.print_exc()
-                self._draw_error_screen(cr, e)
-            self.screen.set_clip(old)
+            if getattr(win.app, "hydrated", True):
+                clip = pygame.Rect(cr)
+                old = self.screen.get_clip()
+                self.screen.set_clip(clip)
+                try:
+                    win.app.draw(self.screen, cr)
+                except Exception as e:
+                    import traceback
+                    traceback.print_exc()
+                    self._draw_error_screen(cr, e)
+                self.screen.set_clip(old)
+            else:
+                # Structural pass: window chrome is visible immediately; app
+                # content hydrates over the next frames.
+                ph = self._content_placeholder_surf(cr.size, self.theme)
+                self.screen.blit(ph, cr.topleft)
 
         # apply fade for close/minimize (reuse a cached size-keyed surface)
         if alpha < 255:
@@ -947,6 +955,16 @@ class LionOS:
         detail = font.render(str(error)[:80], True, (255, 230, 230))
         s.blit(detail, (20, 50))
         self.screen.blit(s, rect.topleft)
+
+    def _content_placeholder_surf(self, size, theme):
+        key = (size, theme.surface)
+        s = self._content_ph_cache.get(key)
+        if s is None:
+            s = pygame.Surface(size, pygame.SRCALPHA)
+            pygame.draw.rect(s, theme.surface + (255,), s.get_rect(),
+                             border_radius=max(4, theme.radius // 2))
+            self._content_ph_cache[key] = s
+        return s
 
     def _draw_window_buttons(self, win: Window, tr):
         font = self.get_font(16)
