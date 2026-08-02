@@ -3,10 +3,10 @@
 Boot it with the ``lionos`` command (or ``python -m lionos``).
 """
 
-__version__ = "2.0.1"
+__version__ = "2.0.2"
 __app_name__ = "Lion-OS"
 __codename__ = "Majestic"
-__build__ = "2.0.1"
+__build__ = "2.0.2"
 
 VERSION = __version__
 APP_NAME = __app_name__

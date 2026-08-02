@@ -41,6 +41,9 @@ class DevicesApp(App):
         if event.type == pygame.TEXTINPUT:
             self._search += event.text
             return True
+        if event.type == pygame.KEYDOWN and getattr(event, "unicode", "") and event.unicode.isprintable():
+            self._search += event.unicode
+            return True
         if event.type == pygame.MOUSEBUTTONDOWN:
             self._click(local_pos)
             return True

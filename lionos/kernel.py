@@ -73,6 +73,11 @@ class LionOS:
         pygame.init()
         pygame.font.init()
         pygame.display.set_caption("Lion-OS — Pride Edition")
+        # Enable TEXTINPUT events so typing works in the wizard, search and apps.
+        try:
+            pygame.key.start_text_input()
+        except Exception:
+            pass
         self.screen_w = self.config.screen_w
         self.screen_h = self.config.screen_h
 
@@ -278,6 +283,10 @@ class LionOS:
         if event.type == pygame.KEYDOWN:
             if event.key in (pygame.K_ESCAPE, pygame.K_F2):
                 self.toggle_search()
+            elif event.key == pygame.K_BACKSPACE:
+                self.search_query = self.search_query[:-1]
+            elif getattr(event, "unicode", "") and event.unicode.isprintable():
+                self.search_query += event.unicode
             elif event.key in (pygame.K_RETURN, pygame.K_KP_ENTER):
                 results = self.search_results()
                 if results:
@@ -728,15 +737,20 @@ class LionOS:
         win = self.wm.focused
         if win and win.state != WINDOW_STATE_MINIMIZED and win.app:
             local = event.pos if hasattr(event, "pos") else None
-            cr = win.content_rect
-            if local and cr.collidepoint(local):
-                local_pos = (local[0] - cr.x, local[1] - cr.y)
-            elif local and win.titlebar_rect.collidepoint(local):
-                local_pos = None
+            if local is None:
+                # Keyboard events (KEYDOWN / TEXTINPUT / KEYUP) carry no
+                # position — pass them to the focused app directly so typing
+                # works in every app.
+                if win.app.handle_event(event, None):
+                    return
             else:
-                local_pos = None
-            if local_pos is not None and win.app.handle_event(event, local_pos):
-                return
+                cr = win.content_rect
+                if cr.collidepoint(local):
+                    local_pos = (local[0] - cr.x, local[1] - cr.y)
+                else:
+                    local_pos = None
+                if local_pos is not None and win.app.handle_event(event, local_pos):
+                    return
 
     # ---------------------------------------------------------------- boot UI
     def _skip_boot(self):
@@ -857,6 +871,10 @@ class LionOS:
             self._wizard_input = self._wizard_input[:-1]
         elif getattr(event, "unicode", "") and event.unicode.isprintable():
             self._wizard_input += event.unicode
+        elif event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
+            self.wizard_active = False
+            self.config.wizard_done = True
+            self.config.save()
 
     def _cycle_theme(self, delta):
         names = list(THEMES)

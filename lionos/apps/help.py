@@ -37,6 +37,9 @@ class HelpApp(App):
         if event.type == pygame.KEYDOWN and event.key == pygame.K_BACKSPACE:
             self._search = self._search[:-1]
             return True
+        if event.type == pygame.KEYDOWN and getattr(event, "unicode", "") and event.unicode.isprintable():
+            self._search += event.unicode
+            return True
         return False
 
     def draw(self, surface, rect):
