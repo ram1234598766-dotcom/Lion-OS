@@ -163,6 +163,39 @@ Bump to **2.0.0**, codename **"Majestic"**. Update `pyproject.toml`,
   defaults; absent hardware/backend = `available=False`, all ops no-op.
 - Framework is **headless-safe** (no display/audio → drivers degrade).
 
+##### 6.4.1 Auto-configuration & self-healing engine
+
+The system **configures itself** — everything is detected, tuned, and applied
+automatically, with zero clicks required:
+
+- **`Driver.auto_tune(probe) -> dict`** — every driver returns its optimal
+  config from its own probe result (audio → best sample rate + device; display →
+  best resolution/refresh/vsync; thermal → real CPU baseline; storage → real
+  free space). The bus runs `auto_tune` automatically after `probe` and applies
+  it **unless the user manually overrode** the value.
+- **Auto-probe cascade:** `probe → auto_tune → init → start`, each step logged
+  at boot (`[ok] Audio → 44100Hz/2ch (wasapi)`).
+- **Self-healing fallback chains:** on init failure a driver retries the next
+  best option automatically (audio: chosen device → default → silent no-op;
+  video: accelerated → software → dummy; resolution: preferred → first
+  available). A driver that cannot start records `last_error`, reports
+  `available=False` with a helpful status, and never crashes the OS.
+- **System auto-tuner** (runs once at boot, re-runs on wake/re-probe):
+  - CPU cores/RAM → recommended motion level, fps target, cache budget.
+  - Display refresh rate → vsync on/off + frame pacing.
+  - Headless / no display → `--headless` path.
+  - Battery present (psutil) → low-battery auto-reduce motion + power saver.
+  - Offline network → network features degrade to cached/empty states.
+- **First boot:** everything auto-configures to a working desktop with zero
+  clicks; the wizard becomes *optional personalization*, not a requirement.
+- **`drivers.auto.json`** — the OS writes a snapshot of what it auto-configured
+  after boot (device → chosen settings), so users/reviewers can inspect and
+  diff against manual overrides.
+- **Precedence:** manual override > auto-configured > defaults.
+- **Devices & Drivers UI:** every driver shows `[Auto] <value>` (detected
+  config), an `[Override]` to change it, `[Re-auto]` to re-run `auto_tune`, and
+  a global **Auto-tune all** button; the driver log shows what was configured.
+
 #### 6.5 Core drivers (real, functional)
 
 - **`drivers/core/display.py`** — SDL video-driver selection (`windows`/
@@ -344,10 +377,13 @@ functional on host, **S** = simulation (plausible telemetry / no-op). See
 #### 6.24 Smoothness & config hardening
 
 - Every subsystem reads `LionConfig` defaults+validation; no config = still boots.
+- **Config precedence:** manual override > auto-configured > defaults; the auto
+  engine writes `drivers.auto.json` so overrides are a visible diff, never a
+  hidden fight.
 - All caches keyed + invalidated correctly.
 - Graceful degradation verified: no audio, no display (`--headless`), slow
   machine (motion=None), corrupt `session.json`/`profile.json`, offline network,
-  absent driver backends.
+  absent driver backends, init failure → fallback chain → `available=False`.
 - Deterministic main loop with perf counters; slow-frame invariant logs.
 
 #### 6.25 Testing
@@ -356,6 +392,11 @@ Extend the pytest suite (headless, `SDL_VIDEODRIVER=dummy`):
 - Icons: every scene renders at 16/32/64; cache hits.
 - **Framework**: base lifecycle; bus order by `depends`; probe/init/start/stop;
   enable/disable; device tree; re-probe; no-backend degradation.
+- **Auto-config**: `auto_tune` produces sensible values from probe; fallback
+  chain on init failure (audio default→silent, video→dummy); override
+  precedence (manual > auto > defaults); `drivers.auto.json` written;
+  system auto-tuner picks motion/fps/vsync from detected CPU/RAM/display/
+  battery.
 - **Core drivers**: audio no-device no-op; display dummy; media `supports()`;
   network offline fallback.
 - **Library drivers**: each driver `probe()`+`status()` without error; a sampled
@@ -388,6 +429,8 @@ Extend the pytest suite (headless, `SDL_VIDEODRIVER=dummy`):
 - Procedural vector icons (not PNG/emoji).
 - Driver framework + 5 core real drivers + ~100-driver simulated library
   (tagged R/S), all configurable, all graceful.
+- **Everything auto-configures**: probe → auto_tune → init → start with
+  self-healing fallbacks and a system auto-tuner; manual overrides win.
 - No required new runtime deps; optional backends opt-in.
 - No new third-party skills installed (apply patterns directly).
 - New apps added (Help, System Health, Inbox, Today, Devices & Drivers);
