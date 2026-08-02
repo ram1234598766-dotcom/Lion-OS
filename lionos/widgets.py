@@ -808,6 +808,20 @@ class Toast:
             s.set_alpha(int(self.anim * 255))
 
 
+class Notification:
+    def __init__(self, title, body, app="", kind="info", timeout=5.0):
+        self.title, self.body, self.app = title, body, app
+        self.kind = kind
+        self.timeout = timeout
+        self.done = False
+        self.t = 0.0
+
+    def update(self, dt):
+        self.t += dt
+        if self.t >= self.timeout:
+            self.done = True
+
+
 # ---------------------------------------------------------------------------
 # Window chrome drawing helpers
 # ---------------------------------------------------------------------------

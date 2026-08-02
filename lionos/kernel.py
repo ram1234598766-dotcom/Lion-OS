@@ -26,7 +26,7 @@ from .clipboard import Clipboard
 from .sound import SoundTheme
 from .wm import (Window, WindowManager, TITLEBAR_H,
                  WINDOW_STATE_MAXIMIZED, WINDOW_STATE_MINIMIZED)
-from .widgets import Menu, Toast, draw_app_tile, draw_glass_panel, rounded_rect
+from .widgets import Menu, Toast, Notification, draw_app_tile, draw_glass_panel, rounded_rect
 from .icons import APP_ICONS, IconCache, glyph_scene
 from .loop import MAX_DT, FrameBudget, DirtyTracker, PerfCounters
 from .drivers import build_driver_bus
@@ -106,6 +106,8 @@ class LionOS:
         self.launched: Dict[str, object] = {}   # singleton instances
         self.instances: List = []          # all running app instances
         self.toasts: List[Toast] = []
+        self._notifications: List[Notification] = []
+        self.notification_center_open = False
         self.menus: List[Menu] = []
         self.launcher_open = False
         self.launcher_search = ""
@@ -232,6 +234,21 @@ class LionOS:
     def show_toast(self, title, message, kind="info"):
         self.toasts.append(Toast(title, message, self.theme, kind=kind))
         self.sound.play("toast")
+
+    # ------------------------------------------------------- notifications
+    def notify(self, title, body, app="", kind="info", action=None):
+        self._notifications.append(Notification(title, body, app=app, kind=kind))
+        self.sound.play("toast")
+        self._needs_redraw = True
+
+    def clear_notifications(self):
+        self._notifications = []
+        self._needs_redraw = True
+
+    def _update_notifications(self, dt):
+        for n in self._notifications:
+            n.update(dt)
+        self._notifications = [n for n in self._notifications if not n.done]
         if len(self.toasts) > 4:
             self.toasts.pop(0)
         self._needs_redraw = True
@@ -370,6 +387,7 @@ class LionOS:
         # session summary fades out over time
         if self._summary_t > 0:
             self._summary_t -= dt
+        self._update_notifications(dt)
 
         # power-off fade
         if self._shutting_down or self._restarting:
