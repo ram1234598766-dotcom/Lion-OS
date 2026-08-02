@@ -50,6 +50,10 @@ class Theme:
     accent2: Color = None
     icon_grad1: Color = None
     icon_grad2: Color = None
+    # --- semantic tokens (non-color, skipped by as_dict) ---
+    radius: int = 12
+    spacing: int = 8
+    text_disabled: Color = None
 
     def __post_init__(self):
         if self.titlebar_top is None:
@@ -64,6 +68,8 @@ class Theme:
             self.icon_grad1 = self.accent
         if self.icon_grad2 is None:
             self.icon_grad2 = self.accent2
+        if self.text_disabled is None:
+            self.text_disabled = ensure_contrast(self.text_dim, self.surface, 3.0)
 
     @property
     def wallpaper(self) -> List[Color]:
@@ -72,7 +78,7 @@ class Theme:
     # -- helpers --------------------------------------------------------------
     def as_dict(self) -> dict:
         """All fields that are plain colors (used for interpolation)."""
-        skip = {"name", "is_dark"}
+        skip = {"name", "is_dark", "radius", "spacing", "text_disabled"}
         return {f.name: getattr(self, f.name) for f in fields(self) if f.name not in skip}
 
     def interpolate(self, other: "Theme", t: float) -> "Theme":
@@ -88,6 +94,50 @@ class Theme:
                 data[k] = blend(a, b, t)
         data["name"] = other.name if t >= 0.5 else self.name
         return Theme(**data)
+
+
+# -- WCAG-AA contrast helpers ---------------------------------------------
+def _srgb_linear(c):
+    c = c / 255.0
+    return c / 12.92 if c <= 0.04045 else ((c + 0.055) / 1.055) ** 2.4
+
+
+def relative_luminance(c):
+    """WCAG relative luminance of an RGB color (0.0-1.0)."""
+    r, g, b = (_srgb_linear(ch) for ch in c[:3])
+    return 0.2126 * r + 0.7152 * g + 0.0722 * b
+
+
+def contrast_ratio(c1, c2):
+    """WCAG contrast ratio between two RGB colors (>=1.0)."""
+    l1, l2 = relative_luminance(c1), relative_luminance(c2)
+    hi, lo = max(l1, l2), min(l1, l2)
+    return (hi + 0.05) / (lo + 0.05)
+
+
+def ensure_contrast(text, bg, min_ratio=4.5):
+    """Lighten (dark themes) or darken (light themes) ``text`` until it reaches
+    ``min_ratio`` against ``bg``. Returns the adjusted color."""
+    text, bg = tuple(text[:3]), tuple(bg[:3])
+    out = list(text)
+    lum_bg = relative_luminance(bg)
+    for _ in range(30):
+        if contrast_ratio(out, bg) >= min_ratio:
+            break
+        if lum_bg > 0.5:
+            out = [max(0, int(v * 0.86)) for v in out]       # light bg -> darken
+        else:
+            out = [min(255, int(v + (255 - v) * 0.5)) for v in out]  # dark bg -> lighten
+    return tuple(out)
+
+
+def theme_contrast_report(t):
+    """Body text contrast vs the main surfaces of a theme."""
+    text = tuple(t.text[:3])
+    return {
+        "surface": contrast_ratio(text, tuple(t.surface[:3])),
+        "wallpaper": contrast_ratio(text, tuple(t.wallpaper_top[:3])),
+    }
 
 
 DARK = Theme(
