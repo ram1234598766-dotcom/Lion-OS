@@ -27,7 +27,7 @@
 **Interfaces:**
 - Produces: Settings sections: **Appearance** (theme, accent picker, wallpaper), **Devices & Drivers** (re-probe, enable/disable), **Motion** (Full/Reduced/None), **Sound** (toggle + volume), **Statusline** (widget toggles), **System** (session resume, focus off, reset, About/Health).
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```python
 # tests/test_settings_app.py
@@ -68,13 +68,13 @@ def test_settings_sections_exposed():
     assert hasattr(inst, "sections") and len(inst.sections) >= 4
 ```
 
-- [ ] **Step 2: Run to verify it fails** — `py -3 -m pytest tests/test_settings_app.py -v` → FAIL (no `sections`).
+- [x] **Step 2: Run to verify it fails** — `py -3 -m pytest tests/test_settings_app.py -v` → FAIL (no `sections`).
 
-- [ ] **Step 3: Implement** — rewrite `settings.py` with a section-tab layout and controls wiring to kernel APIs: theme dropdown → `os.set_theme`, accent swatches → `os.apply_accent`, wallpaper list → `config.wallpaper` + invalidate, motion radio → `config.motion`, sound toggle → `config.sound_enabled` + `os.sound.enabled`, statusline checkboxes → `config.statusline`, session resume toggle, focus-off list, Devices re-probe, reset button.
+- [x] **Step 3: Implement** — rewrite `settings.py` with a section-tab layout and controls wiring to kernel APIs: theme dropdown → `os.set_theme`, accent swatches → `os.apply_accent`, wallpaper list → `config.wallpaper` + invalidate, motion radio → `config.motion`, sound toggle → `config.sound_enabled` + `os.sound.enabled`, statusline checkboxes → `config.statusline`, session resume toggle, focus-off list, Devices re-probe, reset button.
 
-- [ ] **Step 4: Run to verify it passes** — `py -3 -m pytest tests/test_settings_app.py -v` → 2 passed. Full suite + smoke.
+- [x] **Step 4: Run to verify it passes** — `py -3 -m pytest tests/test_settings_app.py -v` → 2 passed. Full suite + smoke.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add lionos/apps/settings.py tests/test_settings_app.py
@@ -91,11 +91,11 @@ git commit -m "feat(apps): Settings overhaul — Appearance/Devices/Motion/Sound
 **Interfaces:**
 - Produces: `version = "2.0.0"` everywhere; `__version__`/`__build__ = "2.0.0"`; `__codename__ = "Majestic"`; README badge `version-2.0.0`; release wheel URL `lion_os_desktop-2.0.0-...`.
 
-- [ ] **Step 1: Update `pyproject.toml`** — `version = "2.0.0"`, description unchanged.
-- [ ] **Step 2: Update `lionos/__init__.py`** — `__version__ = "2.0.0"`, `__build__ = "2.0.0"`, `__codename__ = "Majestic"`.
-- [ ] **Step 3: Update `README.md`** — badge → `version-2.0.0`; release URL → `v2.0.0/lion_os_desktop-2.0.0-py3-none-any.whl`; add a v2.0.0 "Majestic" note summarizing the driver framework, vector icons, persistence, chrome, and power features.
-- [ ] **Step 4: Verify consistency** — `grep -rn "2.0.0\|v2.0.0" README.md pyproject.toml lionos/__init__.py | head`.
-- [ ] **Step 5: Commit**
+- [x] **Step 1: Update `pyproject.toml`** — `version = "2.0.0"`, description unchanged.
+- [x] **Step 2: Update `lionos/__init__.py`** — `__version__ = "2.0.0"`, `__build__ = "2.0.0"`, `__codename__ = "Majestic"`.
+- [x] **Step 3: Update `README.md`** — badge → `version-2.0.0`; release URL → `v2.0.0/lion_os_desktop-2.0.0-py3-none-any.whl`; add a v2.0.0 "Majestic" note summarizing the driver framework, vector icons, persistence, chrome, and power features.
+- [x] **Step 4: Verify consistency** — `grep -rn "2.0.0\|v2.0.0" README.md pyproject.toml lionos/__init__.py | head`.
+- [x] **Step 5: Commit**
 
 ```bash
 git add pyproject.toml lionos/__init__.py README.md
@@ -112,13 +112,13 @@ git commit -m "chore: bump to Lion-OS 2.0.0 Majestic"
 **Interfaces:**
 - Produces: `dist/lion_os_desktop-2.0.0-py3-none-any.whl` + `.tar.gz`; GitHub Release `v2.0.0` with assets; PyPI `lion-os-desktop 2.0.0` live.
 
-- [ ] **Step 1: Clean build** — `rm -rf build dist *.egg-info && py -3 -m build`
-- [ ] **Step 2: Fresh-venv verify** — install the wheel in a clean venv; run `python -m lionos --headless`; check `lionos --version` → `Lion-OS 2.0.0`.
-- [ ] **Step 3: Full suite + smoke**
-- [ ] **Step 4: Push + tag** — `git push origin main`, `git tag v2.0.0`, `git push origin v2.0.0` (release workflow builds + attaches assets).
-- [ ] **Step 5: Publish PyPI** — `twine upload dist/*` with the token (env var only, never committed).
-- [ ] **Step 6: Final verification** — `pip install --no-cache-dir lion-os-desktop` in a clean venv → `lionos --version` → `Lion-OS 2.0.0`; confirm GitHub release assets + PyPI files.
-- [ ] **Step 7: Commit** (any docs)
+- [x] **Step 1: Clean build** — `rm -rf build dist *.egg-info && py -3 -m build`
+- [x] **Step 2: Fresh-venv verify** — install the wheel in a clean venv; run `python -m lionos --headless`; check `lionos --version` → `Lion-OS 2.0.0`.
+- [x] **Step 3: Full suite + smoke**
+- [x] **Step 4: Push + tag** — `git push origin main`, `git tag v2.0.0`, `git push origin v2.0.0` (release workflow builds + attaches assets).
+- [x] **Step 5: Publish PyPI** — `twine upload dist/*` with the token (env var only, never committed).
+- [x] **Step 6: Final verification** — `pip install --no-cache-dir lion-os-desktop` in a clean venv → `lionos --version` → `Lion-OS 2.0.0`; confirm GitHub release assets + PyPI files.
+- [x] **Step 7: Commit** (any docs)
 
 ---
 
