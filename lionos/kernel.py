@@ -380,6 +380,29 @@ class LionOS:
         self._dirty.mark(win.rect)
         self._needs_redraw = True
 
+    def _close_focused(self):
+        win = self.wm.focused
+        if win and win.app:
+            win.app.close()
+
+    def _minimize_focused(self):
+        win = self.wm.focused
+        if win:
+            win.minimize()
+
+    def _taskbar_shortcut(self, idx):
+        """Super+1..9 focuses the running instance at that taskbar position."""
+        running = [i for i in self.instances if not i.closed]
+        if idx < len(running):
+            self.wm.focus(running[idx].window)
+        else:
+            names = list(self.apps_registry.all()) if self.apps_registry else []
+            running_names = {i.window.app.name for i in running}
+            for name in names:
+                if name not in running_names:
+                    self.launch(name)
+                    return
+
     # ------------------------------------------------------------------ utils
     def show_toast(self, title, message, kind="info"):
         self.toasts.append(Toast(title, message, self.theme, kind=kind))
@@ -737,6 +760,32 @@ class LionOS:
                     if x > self.screen_w - 260:
                         break
                 # clock area right-click opens power? keep simple: ignore
+
+        # global keyboard shortcuts (Win+arrows, Alt+F4, Ctrl+W, Super+1..9)
+        if event.type == pygame.KEYDOWN:
+            mods = event.mod
+            if mods & (pygame.KMOD_LGUI | pygame.KMOD_RGUI):
+                if event.key == pygame.K_LEFT:
+                    self.tile_window("left")
+                    return
+                if event.key == pygame.K_RIGHT:
+                    self.tile_window("right")
+                    return
+                if event.key == pygame.K_UP:
+                    self.tile_window("up")
+                    return
+                if event.key == pygame.K_DOWN:
+                    self._minimize_focused()
+                    return
+                if pygame.K_1 <= event.key <= pygame.K_9:
+                    self._taskbar_shortcut(event.key - pygame.K_1)
+                    return
+            if event.key == pygame.K_F4 and mods & pygame.KMOD_ALT:
+                self._close_focused()
+                return
+            if event.key == pygame.K_w and mods & pygame.KMOD_CTRL:
+                self._close_focused()
+                return
 
         # window manager first
         if self.wm.handle_event(event):

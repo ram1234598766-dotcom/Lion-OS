@@ -16,6 +16,7 @@ from typing import List, Optional, TYPE_CHECKING
 import pygame
 
 from .theme import Theme, blend
+from .anim import ease_in_out
 
 if TYPE_CHECKING:
     from .apps.base import App
@@ -56,6 +57,11 @@ class Window:
         self.anim_scale = 1.0
         self.anim_alpha = 255
         self.anim_slide = 0.0
+        self._rect_from = None
+        self._rect_to = None
+        self._rect_t = 0.0
+        self._rect_dur = 0.16
+        self._rect_active = False
         self._anim_target = 1.0
         self._anim_kind = None        # None | "open" | "close" | "minimize" | "maximize"
         self._anim_t = 0.0
@@ -92,9 +98,18 @@ class Window:
     def anim_active(self) -> bool:
         return self._anim_kind is not None
 
+    def morph_rect(self, to_rect, dur: float = 0.16):
+        """Glide the window rect to ``to_rect`` instead of snapping."""
+        self._rect_from = pygame.Rect(self.rect)
+        self._rect_to = pygame.Rect(to_rect)
+        self._rect_t = 0.0
+        self._rect_dur = dur
+        self._rect_active = True
+        self._dirty = True
+
     def step_anim(self, dt: float) -> bool:
         """Advance an active animation. Returns True while still animating."""
-        if self._anim_kind is None:
+        if self._anim_kind is None and not self._rect_active:
             return False
         self._anim_t += dt
         t = min(1.0, self._anim_t / self._anim_dur)
@@ -113,6 +128,21 @@ class Window:
         elif kind == _ANIM_MAXIMIZE:
             self.anim_scale = 0.92 + 0.08 * ease
             self.anim_alpha = 255
+        # rect morph (maximize / snap / restore glide instead of jump)
+        if self._rect_active and self._rect_from is not None and self._rect_to is not None:
+            self._rect_t += dt
+            rt = min(1.0, self._rect_t / self._rect_dur)
+            e = ease_in_out(rt)
+            f, to = self._rect_from, self._rect_to
+            self.rect = pygame.Rect(
+                int(f.x + (to.x - f.x) * e),
+                int(f.y + (to.y - f.y) * e),
+                int(f.width + (to.width - f.width) * e),
+                int(f.height + (to.height - f.height) * e))
+            self._dirty = True
+            if rt >= 1.0:
+                self.rect = pygame.Rect(to)
+                self._rect_active = False
         self._dirty = True
         if t >= 1.0:
             self._finish_anim(kind)
@@ -188,15 +218,15 @@ class Window:
         if not self.maximizable:
             return
         self.restore_rect = pygame.Rect(self.rect)
-        self.rect = pygame.Rect(screen_rect)
         self.state = WINDOW_STATE_MAXIMIZED
         self.snapped = None
+        self.morph_rect(screen_rect)
         self.begin_anim(_ANIM_MAXIMIZE)
         self.invalidate_chrome()
 
     def restore(self):
         if self.state == WINDOW_STATE_MAXIMIZED:
-            self.rect = pygame.Rect(self.restore_rect)
+            self.morph_rect(self.restore_rect)
             self.state = WINDOW_STATE_NORMAL
         elif self.state == WINDOW_STATE_MINIMIZED:
             self.state = WINDOW_STATE_NORMAL
@@ -228,19 +258,22 @@ class Window:
         x = sr.x
         y = sr.y
         if side == "left":
-            self.rect = pygame.Rect(x, y, w2, sr.height)
+            target = pygame.Rect(x, y, w2, sr.height)
         elif side == "right":
-            self.rect = pygame.Rect(x + w2, y, w2, sr.height)
+            target = pygame.Rect(x + w2, y, w2, sr.height)
         elif side == "tl":
-            self.rect = pygame.Rect(x, y, w2, h2)
+            target = pygame.Rect(x, y, w2, h2)
         elif side == "tr":
-            self.rect = pygame.Rect(x + w2, y, w2, h2)
+            target = pygame.Rect(x + w2, y, w2, h2)
         elif side == "bl":
-            self.rect = pygame.Rect(x, y + h2, w2, h2)
+            target = pygame.Rect(x, y + h2, w2, h2)
         elif side == "br":
-            self.rect = pygame.Rect(x + w2, y + h2, w2, h2)
+            target = pygame.Rect(x + w2, y + h2, w2, h2)
+        else:
+            target = pygame.Rect(self.rect)
         self.snapped = side
         self.state = WINDOW_STATE_NORMAL
+        self.morph_rect(target)
         self.begin_anim(_ANIM_MAXIMIZE)
         self.invalidate_chrome()
 

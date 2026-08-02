@@ -897,12 +897,15 @@ def draw_app_tile(surface, rect, glyph, theme, hovered=False, pressed=False,
         img = f.render(glyph, True, (255, 255, 255))
         surface.blit(img, img.get_rect(center=r.center))
     if hover_t > 0:
-        # soft accent glow ring that fades in with the hover
+        # soft accent glow ring + drop shadow that fade in with the hover
         glow = pygame.Surface(r.size, pygame.SRCALPHA)
         ga = int(70 * hover_t)
         pygame.draw.circle(glow, theme.glow[:3] + (ga,), glow.get_rect().center,
                            int(r.width * 0.55), 2)
         surface.blit(glow, r.topleft)
+        shadow = pygame.Surface((r.width, int(r.height * 0.3)), pygame.SRCALPHA)
+        pygame.draw.ellipse(shadow, (0, 0, 0, int(70 * hover_t)), shadow.get_rect())
+        surface.blit(shadow, (r.x, r.bottom - int(r.height * 0.16)))
     surface.set_clip(old)
     if label:
         lf = cached_font(15)

@@ -183,6 +183,8 @@ def test_snap_corners(os_env):
     sr = os_env.screen_rect
     for side in ("tl", "tr", "bl", "br"):
         w.snap(side, sr)
+        for _ in range(30):
+            w.step_anim(0.016)   # complete the morph glide
         assert w.snapped == side
         if side == "tl":
             assert (w.rect.x, w.rect.y) == (sr.x, sr.y)

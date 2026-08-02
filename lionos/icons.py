@@ -55,13 +55,13 @@ def glyph_scene(char):
 APP_ICONS: Dict[str, Scene] = {
     # Terminal: prompt + underscore line on a dark panel
     "Terminal": [
-        s_rect(10, 18, 44, 34, "panel", radius=6),
+        s_rect(10, 18, 44, 34, "grad", radius=6),
         s_glyph(">", 16, "accent", cx=22, cy=32),
         s_line(32, 32, 52, 32, "muted", 3),
     ],
     # Calculator: rounded body + key grid
     "Calculator": [
-        s_rect(14, 10, 36, 46, "panel", radius=6),
+        s_rect(14, 10, 36, 46, "grad", radius=6),
         s_rect(20, 16, 24, 6, "muted", radius=2),
         *[s_circle(cx=22 + (i % 3) * 10, cy=30 + (i // 3) * 10, r=3,
                    color=("accent" if i < 4 else "muted"))
@@ -210,6 +210,8 @@ def palette_for(theme: Theme) -> Dict[str, Color]:
         "danger": theme.danger,
         "white": (255, 255, 255),
         "black": (0, 0, 0),
+        "grad1": theme.icon_grad1,
+        "grad2": theme.icon_grad2,
     }
 
 
@@ -220,14 +222,38 @@ def _fingerprint(theme: Theme) -> tuple:
 
 
 # --- renderer -------------------------------------------------------------
+def _fill_gradient(surf, rect, c1, c2, radius):
+    """Vertical linear gradient fill clipped to a rounded rect."""
+    clip = surf.get_clip()
+    surf.set_clip(rect)
+    h = max(1, rect.height)
+    for yy in range(h):
+        t = yy / h
+        col = (int(c1[0] + (c2[0] - c1[0]) * t),
+               int(c1[1] + (c2[1] - c1[1]) * t),
+               int(c1[2] + (c2[2] - c1[2]) * t))
+        pygame.draw.line(surf, col, (rect.x, rect.y + yy), (rect.right - 1, rect.y + yy))
+    if radius > 0:
+        mask = pygame.Surface(rect.size, pygame.SRCALPHA)
+        pygame.draw.rect(mask, (255, 255, 255, 255), mask.get_rect(), border_radius=radius)
+        surf.blit(mask, rect.topleft, special_flags=pygame.BLEND_RGBA_MIN)
+    surf.set_clip(clip)
+
+
 def _draw_primitive(surf, kind, p, pal, s):
     scale = lambda v: int(v * s)
     px = lambda k: pal.get(p.get(k), (255, 255, 255))
     if kind == "rect":
-        pygame.draw.rect(surf, px("color"),
-                         pygame.Rect(scale(p["x"]), scale(p["y"]),
-                                     scale(p["w"]), scale(p["h"])),
-                         border_radius=scale(p.get("radius", 3)))
+        if p.get("color") == "grad":
+            rr = pygame.Rect(scale(p["x"]), scale(p["y"]),
+                             scale(p["w"]), scale(p["h"]))
+            _fill_gradient(surf, rr, pal["grad1"], pal["grad2"],
+                           scale(p.get("radius", 3)))
+        else:
+            pygame.draw.rect(surf, px("color"),
+                             pygame.Rect(scale(p["x"]), scale(p["y"]),
+                                         scale(p["w"]), scale(p["h"])),
+                             border_radius=scale(p.get("radius", 3)))
     elif kind == "circle":
         pygame.draw.circle(surf, px("color"),
                            (scale(p["cx"]), scale(p["cy"])),
