@@ -29,7 +29,7 @@
   - `LionOS.workspace: int`, `set_workspace(n)`, `WORKSPACE_COUNT = 4`.
   - Tiling: `tile_window(dir)` (Win+arrows) → half/quarter/center; `_workspace_indicator` on taskbar.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```python
 # tests/test_workspaces.py
@@ -70,9 +70,9 @@ def test_tile_window_half():
     assert inst.window.rect.width == os_.screen_w // 2
 ```
 
-- [ ] **Step 2: Run to verify it fails** — `py -3 -m pytest tests/test_workspaces.py -v` → AttributeError.
+- [x] **Step 2: Run to verify it fails** — `py -3 -m pytest tests/test_workspaces.py -v` → AttributeError.
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 `lionos/wm.py` — add `self.workspace = 0` to `Window.__init__`; add:
 
@@ -89,9 +89,9 @@ def test_tile_window_half():
 - Hotkeys: Ctrl+Alt+←/→ → `set_workspace`, Win+arrows → `tile_window`. (Add to `_handle_global_event`/`_handle_event`.)
 - Taskbar `_workspace_indicator`: draw 4 dots, highlight current.
 
-- [ ] **Step 4: Run to verify it passes** — `py -3 -m pytest tests/test_workspaces.py -v` → 2 passed. Full suite + smoke.
+- [x] **Step 4: Run to verify it passes** — `py -3 -m pytest tests/test_workspaces.py -v` → 2 passed. Full suite + smoke.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add lionos/wm.py lionos/kernel.py tests/test_workspaces.py
@@ -112,7 +112,7 @@ git commit -m "feat(wm): virtual workspaces + window tiling shortcuts"
   - `global_search(query, os_) -> list[dict]` — searches app names/descriptions, Settings sections, Notes filenames, activity log; each result `{title, source, kind, target}`.
   - Kernel: `self.search_open`, `self.search_query`, `_draw_search()`, Enter opens the target.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```python
 # tests/test_search.py
@@ -140,9 +140,9 @@ def test_search_finds_settings():
     assert any(r["kind"] == "setting" for r in results)
 ```
 
-- [ ] **Step 2: Run to verify it fails** — `py -3 -m pytest tests/test_search.py -v` → ImportError.
+- [x] **Step 2: Run to verify it fails** — `py -3 -m pytest tests/test_search.py -v` → ImportError.
 
-- [ ] **Step 3: Implement `lionos/search.py`**
+- [x] **Step 3: Implement `lionos/search.py`**
 
 ```python
 """Global search across apps, settings, notes, and activity."""
@@ -185,9 +185,9 @@ def global_search(query: str, os_) -> list:
 
 Kernel: `search_open`, `search_query`; `_draw_search()` centered overlay listing results; Enter launches apps / opens Settings / opens a note; Super+Space toggles.
 
-- [ ] **Step 4: Run to verify it passes** — `py -3 -m pytest tests/test_search.py -v` → 2 passed. Full suite + smoke.
+- [x] **Step 4: Run to verify it passes** — `py -3 -m pytest tests/test_search.py -v` → 2 passed. Full suite + smoke.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add lionos/search.py lionos/kernel.py tests/test_search.py
@@ -207,7 +207,7 @@ git commit -m "feat(search): global search overlay (Super+Space)"
   - `LionOS.take_screenshot() -> str | None` — captures the screen to `~/.lionos/screenshots/YYYYmmdd-HHMMSS.png`, toast + activity event.
   - Focus mode: `LionConfig.focus_off: list[str]` (apps marked "not today"); `LionOS.focus_dimmed(name)`; dimmed apps are dimmed in the launcher and their notifications swallowed.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```python
 # tests/test_screenshot_focus.py
@@ -239,9 +239,9 @@ def test_focus_mode_dim():
     assert os_.focus_dimmed("Notes") is False
 ```
 
-- [ ] **Step 2: Run to verify it fails** — `py -3 -m pytest tests/test_screenshot_focus.py -v` → AttributeError.
+- [x] **Step 2: Run to verify it fails** — `py -3 -m pytest tests/test_screenshot_focus.py -v` → AttributeError.
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 `lionos/config.py` add: `focus_off: list = field(default_factory=list)`.
 
@@ -252,9 +252,9 @@ def test_focus_mode_dim():
 - In `notify`, swallow notifications whose `app` is dimmed.
 - Hotkey Win+Shift+S → `take_screenshot()`.
 
-- [ ] **Step 4: Run to verify it passes** — `py -3 -m pytest tests/test_screenshot_focus.py -v` → 2 passed. Full suite + smoke.
+- [x] **Step 4: Run to verify it passes** — `py -3 -m pytest tests/test_screenshot_focus.py -v` → 2 passed. Full suite + smoke.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add lionos/kernel.py lionos/config.py tests/test_screenshot_focus.py
@@ -274,7 +274,7 @@ git commit -m "feat(tools): screenshot tool + focus mode"
 **Interfaces:**
 - Produces: `MediaPlayerApp` (open audio via `os.drivers.get("media")`, play/pause/seek, simple amplitude visualizer), `InboxApp` (quick-capture list + promote-to-task), `SystemHealthApp` (scored audit /100), `TodayApp` (activity log timeline).
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```python
 # tests/test_new_apps.py
@@ -311,9 +311,9 @@ def test_new_apps_launch_and_draw():
     pygame.display.flip()
 ```
 
-- [ ] **Step 2: Run to verify it fails** — `py -3 -m pytest tests/test_new_apps.py -v` → FAIL (not registered).
+- [x] **Step 2: Run to verify it fails** — `py -3 -m pytest tests/test_new_apps.py -v` → FAIL (not registered).
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 `mediaplayer.py`: keep the playlist UI; route playback through `self.os.drivers.get("media")` (audio) and the audio driver for volume; add a simple amplitude visualizer (bars from `self._phase`).
 `inbox.py`: `InboxApp` — list of entries (title, section To Do/Someday/Ideas), text input to add, click "promote" → move to To Do; persists `~/.lionos/inbox.json`.
@@ -322,9 +322,9 @@ def test_new_apps_launch_and_draw():
 
 Register all four in `apps/__init__.py`.
 
-- [ ] **Step 4: Run to verify it passes** — `py -3 -m pytest tests/test_new_apps.py -v` → 2 passed. Full suite + smoke.
+- [x] **Step 4: Run to verify it passes** — `py -3 -m pytest tests/test_new_apps.py -v` → 2 passed. Full suite + smoke.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add lionos/apps/mediaplayer.py lionos/apps/inbox.py lionos/apps/health.py lionos/apps/today.py lionos/apps/__init__.py tests/test_new_apps.py
