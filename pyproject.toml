@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "lion-os-desktop"
-version = "1.1.1"
-description = "Lion-OS — a full graphical desktop operating system that runs inside Python (Pygame). Boot, login, desktop, window manager and apps."
+version = "1.1.2"
+description = "Lion-OS - a full graphical desktop operating system that runs inside Python (Pygame). Boot, login, desktop, window manager and apps."
 readme = "README.md"
 requires-python = ">=3.9"
 license = { text = "MIT" }
@@ -51,6 +51,7 @@ Issues = "https://github.com/ram1234598766-dotcom/Lion-OS/issues"
 
 [project.scripts]
 lionos = "lionos.cli:main"
+lion-os-desktop = "lionos.cli:main"
 
 [tool.setuptools]
 packages = ["lionos", "lionos.apps", "lionos.ai"]

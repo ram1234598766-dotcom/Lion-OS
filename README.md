@@ -12,7 +12,7 @@ with a single command.
 
 ![Python](https://img.shields.io/badge/python-3.9%2B-blue)
 ![License](https://img.shields.io/badge/license-MIT-green)
-![version](https://img.shields.io/badge/version-1.1.1-orange)
+![version](https://img.shields.io/badge/version-1.1.2-orange)
 ![tests](https://img.shields.io/badge/tests-35%20passing-brightgreen)
 
 </div>
@@ -37,6 +37,11 @@ full-screen overlay, glow, taskbar and fade surfaces instead of allocating them
 every frame; app-icon tiles and glass panels are cached; fonts are shared through
 a global cache instead of being rebuilt per draw call; and the System Monitor's
 graph no longer allocates a fresh fill surface each frame.
+
+The v1.1.2 release makes the install-to-run experience bulletproof: the package
+installs **two equivalent commands** (`lionos` and `lion-os-desktop`), `python -m
+lionos` works even when a console script isn't on your PATH, and the PyPI listing
+metadata is clean.
 
 It's designed to be simple to run and genuinely fun to explore:
 
@@ -66,6 +71,9 @@ python -m pip install lion-os-desktop
 lionos
 ```
 
+Installing `lion-os-desktop` gives you two equivalent commands — `lionos` and
+`lion-os-desktop` — plus the always-available `python -m lionos`.
+
 > **Requirements:** Python 3.9+. On first run Lion-OS installs nothing extra —
 > Pygame and psutil are dependencies and come automatically.
 
@@ -81,6 +89,10 @@ python -m lionos
 ---
 
 ## 🖥 Quick Start
+
+> `lionos` and `python -m lionos` are equivalent. If your shell says `lionos` is
+> not recognized (common when Python lives in `Program Files` and pip installs to
+> your *user* site), use `python -m lionos` — or see [Troubleshooting](#-troubleshooting).
 
 | Command | What it does |
 |---|---|
@@ -232,12 +244,54 @@ workflow run.
 
 ---
 
+## 🛟 Troubleshooting
+
+### `lionos` is not recognized as a command
+
+The package installs correctly — the launcher just isn't on your PATH. This
+happens when pip falls back to your *user* site-packages, e.g. when Python is
+installed to `C:\Program Files\PythonX` (not writable by you) instead of the
+per-user `...\AppData\Local\Programs\Python\PythonX` location.
+
+**The universal fix (works everywhere, no PATH edits):**
+
+```bash
+python -m lionos
+```
+
+**To make the `lionos` command work in any terminal:**
+
+1. Find where pip put the launcher:
+
+   ```bash
+   pip show -f lion-os-desktop | findstr /i "lionos"    # Windows
+   pip show -f lion-os-desktop | grep lionos            # Linux/macOS
+   ```
+
+2. Either add that directory to your PATH, **or** install into a virtual
+   environment, where the command always resolves:
+
+   ```bash
+   python -m venv .venv
+   .venv\Scripts\activate      # Windows
+   source .venv/bin/activate   # Linux/macOS
+   pip install lion-os-desktop
+   lionos
+   ```
+
+### Requirements
+
+Python 3.9+. Pygame (`pygame-ce`) ships prebuilt wheels for every supported
+Python version on Windows, macOS and Linux — no compiler needed.
+
+---
+
 ## 📦 Releases
 
 Pre-built wheels are attached to [GitHub Releases](https://github.com/ram1234598766-dotcom/Lion-OS/releases):
 
 ```
-pip install https://github.com/ram1234598766-dotcom/Lion-OS/releases/download/v1.1.1/lion_os_desktop-1.1.1-py3-none-any.whl
+pip install https://github.com/ram1234598766-dotcom/Lion-OS/releases/download/v1.1.2/lion_os_desktop-1.1.2-py3-none-any.whl
 ```
 
 ---
