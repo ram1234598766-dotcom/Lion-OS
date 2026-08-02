@@ -321,6 +321,24 @@ class LionOS:
             self.screen.blit(s, (row.right - 12 - s.get_width(), row.y + 9))
             y += 40
 
+    def take_screenshot(self):
+        try:
+            from .config import ensure_config_dir
+            d = os.path.join(ensure_config_dir(), "screenshots")
+            os.makedirs(d, exist_ok=True)
+            stamp = time.strftime("%Y%m%d-%H%M%S")
+            path = os.path.join(d, f"{stamp}.png")
+            pygame.image.save(self.screen, path)
+            _activity.log_event("screenshot", path)
+            self.show_toast("Screenshot", "Saved to " + path, "info")
+            return path
+        except Exception:
+            return None
+
+    def focus_dimmed(self, name):
+        """Apps marked 'not today' are dimmed in the launcher + swallow alerts."""
+        return name in self.config.focus_off
+
     def tile_window(self, direction):
         win = self.wm.focused
         if win is None:
@@ -351,6 +369,8 @@ class LionOS:
 
     # ------------------------------------------------------- notifications
     def notify(self, title, body, app="", kind="info", action=None):
+        if app and self.focus_dimmed(app):
+            return  # focus mode swallows notifications from 'not today' apps
         self._notifications.append(Notification(title, body, app=app, kind=kind))
         self.sound.play("toast")
         self._needs_redraw = True

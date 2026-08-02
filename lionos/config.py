@@ -61,6 +61,7 @@ class LionConfig:
     wizard_done: bool = False
     pinned_apps: list = field(default_factory=list)
     statusline: list = field(default_factory=lambda: ["clock", "date", "theme"])
+    focus_off: list = field(default_factory=list)
     mru_apps: list = field(default_factory=list)
     bookmarks: list = field(default_factory=list)
 
