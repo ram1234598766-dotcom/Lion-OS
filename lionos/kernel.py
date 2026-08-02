@@ -125,6 +125,7 @@ class LionOS:
         self.workspace = 0
         self.search_open = False
         self.search_query = ""
+        self._launcher_open_t = 0.0
         self._launcher_idx = 0
         self.power_menu_open = False
         self.context_menu = None           # (pos, items)
@@ -193,6 +194,7 @@ class LionOS:
         self._taskbar_surf = pygame.Surface((self.screen_w, 46), pygame.SRCALPHA)
         self._window_fade_cache: Dict[tuple, pygame.Surface] = {}
         self._content_ph_cache: Dict[tuple, pygame.Surface] = {}
+        self._focus_glow_cache: Dict[tuple, pygame.Surface] = {}
         self._tooltip_surf = None      # reusable tooltip background
 
         # hidden for testing
@@ -563,6 +565,8 @@ class LionOS:
         if self._summary_t > 0:
             self._summary_t -= dt
         self._update_notifications(dt)
+        self._launcher_open_t = max(0.0, min(1.0, self._launcher_open_t +
+                                             (self._dt * 3.0 if self.launcher_open else -self._dt * 6.0)))
 
         # power-off fade
         if self._shutting_down or self._restarting:
@@ -1339,6 +1343,12 @@ class LionOS:
 
         win.ensure_chrome(self.theme, focused, font, self.config.font_size)
 
+        # subtle focus glow ring around the focused window
+        if focused:
+            glow = self._focus_glow_surf(scaled_rect.size, self.theme)
+            if glow:
+                self.screen.blit(glow, (scaled_rect.x - 6, scaled_rect.y - 6))
+
         shadow = win._chrome.get("shadow")
         if shadow:
             self.screen.blit(shadow, (scaled_rect.x - 12, scaled_rect.y - 12))
@@ -1406,6 +1416,19 @@ class LionOS:
                 _json.dump(snap, f, indent=2)
         except Exception:
             pass
+
+    def _focus_glow_surf(self, size, theme):
+        key = (size, theme.glow)
+        s = self._focus_glow_cache.get(key)
+        if s is None:
+            s = pygame.Surface((size[0] + 12, size[1] + 12), pygame.SRCALPHA)
+            for i, alpha in enumerate((20, 40, 60)):
+                pygame.draw.rect(s, theme.glow[:3] + (alpha,),
+                                 pygame.Rect(i, i, s.get_width() - 2 * i,
+                                             s.get_height() - 2 * i), 2,
+                                 border_radius=max(4, theme.radius))
+            self._focus_glow_cache[key] = s
+        return s
 
     def _content_placeholder_surf(self, size, theme):
         key = (size, theme.surface)
@@ -1597,11 +1620,13 @@ class LionOS:
                 tile = pygame.Rect(cx, cy, size, size)
                 ic = pygame.Rect(cx + 18, cy + 12, 60, 60)
                 hovered = tile.collidepoint(pygame.mouse.get_pos())
+                ent = max(0.0, min(1.0, self._launcher_open_t * 2.2 - i * 0.2))
                 draw_app_tile(self.screen, ic, app.icon, self.theme,
                               hovered=hovered, selected=(i == sel),
                               icon_cache=self.icon_cache,
                               scene=APP_ICONS.get(app.name), scene_id=app.name,
-                              hover_t=self._hover_t(("lch", app.name), ic))
+                              hover_t=self._hover_t(("lch", app.name), ic),
+                              enter_t=ent)
                 lfont = self.get_font(15)
                 limg = lfont.render(app.name, True, self.theme.text)
                 self.screen.blit(limg, limg.get_rect(midtop=(tile.centerx, ic.bottom + 8)))

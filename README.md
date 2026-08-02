@@ -12,7 +12,7 @@ with a single command.
 
 ![Python](https://img.shields.io/badge/python-3.9%2B-blue)
 ![License](https://img.shields.io/badge/license-MIT-green)
-![version](https://img.shields.io/badge/version-2.0.1-orange)
+![version](https://img.shields.io/badge/version-2.0.5-orange)
 ![tests](https://img.shields.io/badge/tests-122%20passing-brightgreen)
 
 </div>
@@ -311,7 +311,7 @@ Python version on Windows, macOS and Linux — no compiler needed.
 Pre-built wheels are attached to [GitHub Releases](https://github.com/ram1234598766-dotcom/Lion-OS/releases):
 
 ```
-pip install https://github.com/ram1234598766-dotcom/Lion-OS/releases/download/v2.0.1/lion_os_desktop-2.0.1-py3-none-any.whl
+pip install https://github.com/ram1234598766-dotcom/Lion-OS/releases/download/v2.0.5/lion_os_desktop-2.0.5-py3-none-any.whl
 ```
 
 ---

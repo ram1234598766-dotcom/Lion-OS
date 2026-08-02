@@ -70,13 +70,13 @@ APP_ICONS: Dict[str, Scene] = {
     # File Manager: folder with tab
     "File Manager": [
         s_rect(12, 20, 16, 8, "accent2", radius=3),
-        s_rect(10, 24, 44, 28, "accent", radius=4),
+        s_rect(10, 24, 44, 28, "grad", radius=4),
         s_line(18, 34, 46, 34, "white", 2),
         s_line(18, 40, 40, 40, "white", 2),
     ],
     # Notes: page with lines + folded corner
     "Notes": [
-        s_rect(18, 12, 30, 42, "panel", radius=4),
+        s_rect(18, 12, 30, 42, "grad", radius=4),
         s_line(24, 24, 42, 24, "muted", 2),
         s_line(24, 32, 42, 32, "muted", 2),
         s_line(24, 40, 36, 40, "muted", 2),
@@ -117,7 +117,7 @@ APP_ICONS: Dict[str, Scene] = {
     ],
     # AI Assistant: chat bubble with dots
     "AI Assistant": [
-        s_rect(12, 14, 40, 28, "accent", radius=8),
+        s_rect(12, 14, 40, 28, "grad", radius=8),
         s_poly([(16, 40), (16, 50), (26, 40)], "accent"),
         s_circle(cx=24, cy=28, r=3, color="white"),
         s_circle(cx=32, cy=28, r=3, color="white"),

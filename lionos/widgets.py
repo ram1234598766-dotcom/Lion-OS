@@ -844,7 +844,8 @@ def draw_glass_panel(surface, rect, theme, radius=12, border=True):
 
 def draw_app_tile(surface, rect, glyph, theme, hovered=False, pressed=False,
                   selected=False, font_size=None, label=None,
-                  icon_cache=None, scene=None, scene_id=None, hover_t=0.0):
+                  icon_cache=None, scene=None, scene_id=None, hover_t=0.0,
+                  enter_t=1.0):
     """Draw a gradient app-icon tile, used across the desktop.
 
     The gradient base is cached per (size, colors) so desktop icons, launcher
@@ -882,7 +883,9 @@ def draw_app_tile(surface, rect, glyph, theme, hovered=False, pressed=False,
     elif hovered or selected:
         pygame.draw.rect(surface, (255, 255, 255, 26), r, border_radius=radius)
     # Vector icon when available, else glyph fallback.
-    lift = 1.0 + 0.06 * ease_out_back(hover_t) if hover_t > 0 else 1.0
+    # entrance pop (staggered launcher) then hover lift
+    enter = ease_out_back(enter_t) if enter_t < 1.0 else 1.0
+    lift = (0.7 + 0.3 * enter) * (1.0 + 0.06 * ease_out_back(hover_t) if hover_t > 0 else 1.0)
     if scene is not None and icon_cache is not None:
         pad = max(2, int(r.height * 0.08))
         inner = pygame.Rect(r.x + pad, r.y + pad, r.width - 2 * pad, r.height - 2 * pad)
