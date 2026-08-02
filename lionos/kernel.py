@@ -24,6 +24,7 @@ from .wm import (Window, WindowManager, TITLEBAR_H,
 from .widgets import Menu, Toast, draw_app_tile, draw_glass_panel, rounded_rect
 from .icons import APP_ICONS, IconCache, glyph_scene
 from .loop import MAX_DT, FrameBudget, DirtyTracker, PerfCounters
+from .drivers import build_driver_bus
 
 BOOT_LINES = [
     ("Lion-OS Kernel v" + __version__, True),
@@ -85,6 +86,10 @@ class LionOS:
         self._dirty = DirtyTracker()
         self._perf = PerfCounters()
         self.fps = 60.0
+        # driver bus — auto-probes and auto-configures every driver at boot
+        self.drivers = build_driver_bus(self.config)
+        self.driver_probe_lines = self.drivers.probe_all()
+        self._write_driver_auto_config()
         self.running = True
         self.booted = False
         self.logged_in = False
@@ -321,6 +326,9 @@ class LionOS:
             return
 
         self._update_theme_transition(dt)
+
+        # tick running drivers each frame
+        self.drivers.update(dt)
 
         # power-off fade
         if self._shutting_down or self._restarting:
@@ -955,6 +963,20 @@ class LionOS:
         detail = font.render(str(error)[:80], True, (255, 230, 230))
         s.blit(detail, (20, 50))
         self.screen.blit(s, rect.topleft)
+
+    def _write_driver_auto_config(self):
+        """Snapshot what the bus auto-configured (so overrides are a visible
+        diff). Best-effort; never blocks boot."""
+        try:
+            from .config import ensure_config_dir
+            import json as _json
+            import os as _os
+            snap = self.drivers.auto_config_snapshot()
+            path = _os.path.join(ensure_config_dir(), "drivers.auto.json")
+            with open(path, "w", encoding="utf-8") as f:
+                _json.dump(snap, f, indent=2)
+        except Exception:
+            pass
 
     def _content_placeholder_surf(self, size, theme):
         key = (size, theme.surface)

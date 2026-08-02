@@ -16,6 +16,18 @@ class BootProbeLine:
     detail: str = ""
 
 
+def _json_safe(obj):
+    """Recursively convert non-JSON values (e.g. sets) so driver config can be
+    serialized into drivers.auto.json and rendered by the Devices app."""
+    if isinstance(obj, set):
+        return sorted(obj)
+    if isinstance(obj, dict):
+        return {k: _json_safe(v) for k, v in obj.items()}
+    if isinstance(obj, (list, tuple)):
+        return [_json_safe(v) for v in obj]
+    return obj
+
+
 class DriverBus:
     def __init__(self, drivers: Optional[List[Driver]] = None):
         self._drivers: Dict[str, Driver] = {}
@@ -138,7 +150,7 @@ class DriverBus:
                     "status": d.status.to_dict(),
                     "simulated": d.simulated,
                     "description": d.description,
-                    "config": dict(d.config),
+                    "config": _json_safe(dict(d.config)),
                 } for d in drivers],
             })
         return out
@@ -146,6 +158,6 @@ class DriverBus:
     def auto_config_snapshot(self) -> dict:
         return {
             "written_at": time.time(),
-            "drivers": {d.name: {"name": d.name, "config": dict(d.config)}
+            "drivers": {d.name: {"name": d.name, "config": _json_safe(dict(d.config))}
                         for d in self.all()},
         }
