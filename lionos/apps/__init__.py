@@ -12,7 +12,8 @@ def load_apps() -> AppRegistry:
         return registry
     from . import (about, calculator, filemanager, monitor, notes, paint,
                    settings, terminal, texteditor, welcome, assistant,
-                   mediaplayer, browser, appstore, widgets_demo, devices, help)
+                   mediaplayer, browser, appstore, widgets_demo, devices, help,
+                   inbox, health, today)
     registry.register_all([
         about.AboutApp,
         calculator.CalculatorApp,
@@ -31,6 +32,9 @@ def load_apps() -> AppRegistry:
         widgets_demo.WidgetsDemoApp,
         devices.DevicesApp,
         help.HelpApp,
+        inbox.InboxApp,
+        health.SystemHealthApp,
+        today.TodayApp,
     ])
     return registry
 
