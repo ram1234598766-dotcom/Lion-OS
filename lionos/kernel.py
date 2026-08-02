@@ -20,6 +20,9 @@ from . import __version__
 from .config import ConfigStore, LionConfig, ensure_config_dir
 from .theme import Theme, THEMES, blend
 from .wizard import WIZARD_STEPS, load_profile, save_profile
+from . import activity as _activity
+from . import session as _session
+from .clipboard import Clipboard
 from .wm import (Window, WindowManager, TITLEBAR_H,
                  WINDOW_STATE_MAXIMIZED, WINDOW_STATE_MINIMIZED)
 from .widgets import Menu, Toast, draw_app_tile, draw_glass_panel, rounded_rect
@@ -131,6 +134,11 @@ class LionOS:
         self._wizard_input = ""
         self.wizard_profile = load_profile()
 
+        # persistence & identity
+        self.clipboard = Clipboard()
+        self._summary = ""
+        self._summary_t = 0.0
+
         # theme transition
         self._theme_from: Optional[Theme] = None
         self._theme_to: Optional[Theme] = None
@@ -205,6 +213,7 @@ class LionOS:
         if cls.singleton:
             self.launched[name] = inst
         inst.on_open()
+        _activity.log_event("app_launch", name)
         # remember app in MRU
         mru = list(self.config.mru_apps)
         if name in mru:
@@ -237,6 +246,7 @@ class LionOS:
     def set_theme(self, name: str):
         if name not in THEMES:
             return
+        _activity.log_event("theme_change", name)
         self.config_store.set(theme=name)
         self.config.theme = name
         target = THEMES[name]
@@ -274,6 +284,18 @@ class LionOS:
 
     # ------------------------------------------------------------------ loop
     def run(self):
+        # graceful shutdown: persist the session on SIGINT/SIGTERM
+        import signal as _signal
+
+        def _on_term(*_a):
+            self._save_session_on_exit()
+            self.running = False
+
+        try:
+            _signal.signal(_signal.SIGINT, _on_term)
+            _signal.signal(_signal.SIGTERM, _on_term)
+        except (ValueError, OSError):
+            pass
         while self.running:
             dt = min(MAX_DT, self.clock.tick(60) / 1000.0)
             self._dt = self._frame_budget.tick(dt)
@@ -299,6 +321,7 @@ class LionOS:
                 self._headless_tick()
             self._perf.end_frame()
             self.fps = self._perf.fps
+        self._save_session_on_exit()
         self.shutdown = True
         pygame.quit()
         return 0
@@ -336,6 +359,10 @@ class LionOS:
 
         # tick running drivers each frame
         self.drivers.update(dt)
+
+        # session summary fades out over time
+        if self._summary_t > 0:
+            self._summary_t -= dt
 
         # power-off fade
         if self._shutting_down or self._restarting:
@@ -583,6 +610,73 @@ class LionOS:
             except Exception:
                 pass
         self.show_toast("Welcome", f"Welcome back, {self.config.username}!", "success")
+        if self.config.session_resume:
+            self._restore_session(_session.recover_session())
+        _activity.log_event("login", self.config.username)
+        summary = _activity.session_summary()
+        if summary:
+            self._summary = summary
+            self._summary_t = 5.0
+
+    # ----------------------------------------------------------- persistence
+    def _collect_session(self):
+        windows = []
+        for win in self.wm.windows:
+            if win.app and win.app.name != "Welcome":
+                windows.append({
+                    "app": win.app.name,
+                    "rect": list(win.rect),
+                    "minimized": win.state == WINDOW_STATE_MINIMIZED,
+                })
+        return {"windows": windows, "theme": self.config.theme,
+                "workspace": getattr(self, "_workspace", 0)}
+
+    def _restore_session(self, data):
+        if not data or not data.get("windows"):
+            return
+        if data.get("theme") and data["theme"] in THEMES:
+            self.config.theme = data["theme"]
+        for w in data["windows"]:
+            cls = self.apps_registry.get(w["app"]) if self.apps_registry else None
+            if cls is None:
+                continue
+            try:
+                inst = cls(self)
+                if len(w.get("rect", [])) == 4:
+                    inst.window.rect = pygame.Rect(*w["rect"])
+                    inst.rect = pygame.Rect(inst.window.content_rect)
+                inst.window.begin_anim("open")
+                if w.get("minimized"):
+                    inst.window.state = WINDOW_STATE_MINIMIZED
+                if inst not in self.instances:
+                    self.instances.append(inst)
+            except Exception:
+                continue
+
+    def _save_session_on_exit(self):
+        if not getattr(self, "logged_in", False):
+            return
+        data = self._collect_session()
+        _session.save_session(data)
+        _session.checkpoint_session(data)
+
+    def clipboard_copy(self, value):
+        if self.config.clipboard_enabled:
+            self.clipboard.copy("text", value)
+
+    def clipboard_paste(self):
+        if self.config.clipboard_enabled:
+            return self.clipboard.paste()
+        return ""
+
+    def _draw_session_summary(self):
+        alpha = min(1.0, self._summary_t)
+        s = pygame.Surface((self.screen_w, 70), pygame.SRCALPHA)
+        s.fill((20, 20, 30, int(200 * alpha)))
+        font = self.get_font(18)
+        img = font.render(self._summary, True, self.theme.text)
+        s.blit(img, (24, 24))
+        self.screen.blit(s, (0, self.screen_h - 90))
 
     # ----------------------------------------------------------- wizard UI
     def _handle_wizard_event(self, event):
@@ -864,6 +958,8 @@ class LionOS:
         self._draw_context_menu()
         self._draw_taskbar()
         self._draw_toasts()
+        if self._summary and self._summary_t > 0:
+            self._draw_session_summary()
         if self._shutting_down:
             self._draw_power_fade("Shutting down…")
         elif self._restarting:
@@ -1206,6 +1302,8 @@ class LionOS:
 
     def _draw_launcher_recent(self):
         mru = [n for n in self.config.mru_apps if n in self.apps_registry.all()]
+        if not mru:
+            mru = [n for n in _activity.app_counts() if n in self.apps_registry.all()][:6]
         if not mru:
             return
         font = self.get_font(16)
