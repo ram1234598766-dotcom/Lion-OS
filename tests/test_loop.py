@@ -39,3 +39,16 @@ def test_perf_counters():
     assert pc.fps > 0
     pc.mark_redraw()
     assert pc.redraw_count == 1
+
+
+def test_kernel_loop_helpers_wire_in():
+    # The kernel imports these helpers; ensure they resolve and are the same
+    # classes the kernel depends on.
+    import lionos.kernel as K
+    assert K.MAX_DT == 0.05
+    assert hasattr(K, "FrameBudget") and hasattr(K, "DirtyTracker") and hasattr(K, "PerfCounters")
+    os_env = K.LionOS()
+    assert os_env._frame_budget is not None
+    assert os_env._dirty is not None
+    assert os_env._perf is not None
+    assert os_env.fps == 60.0

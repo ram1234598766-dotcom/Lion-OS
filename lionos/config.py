@@ -48,6 +48,8 @@ class LionConfig:
     ai_api_key: str = ""
     ai_enabled: bool = True
     anim_enabled: bool = True
+    vsync: bool = False
+    show_fps: bool = False
     auto_login: bool = False
     lock_on_wake: bool = False
     mru_apps: list = field(default_factory=list)

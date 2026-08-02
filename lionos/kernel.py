@@ -23,6 +23,7 @@ from .wm import (Window, WindowManager, TITLEBAR_H,
                  WINDOW_STATE_MAXIMIZED, WINDOW_STATE_MINIMIZED)
 from .widgets import Menu, Toast, draw_app_tile, draw_glass_panel, rounded_rect
 from .icons import APP_ICONS, IconCache, glyph_scene
+from .loop import MAX_DT, FrameBudget, DirtyTracker, PerfCounters
 
 BOOT_LINES = [
     ("Lion-OS Kernel v" + __version__, True),
@@ -70,11 +71,20 @@ class LionOS:
         flags = 0
         if self.config.resolution == "fullscreen":
             flags = pygame.FULLSCREEN | pygame.SCALED
-        self.screen = pygame.display.set_mode((self.screen_w, self.screen_h), flags)
+        try:
+            self.screen = pygame.display.set_mode(
+                (self.screen_w, self.screen_h), flags,
+                vsync=1 if self.config.vsync else 0)
+        except (TypeError, ValueError):
+            self.screen = pygame.display.set_mode((self.screen_w, self.screen_h), flags)
         self.screen_rect = self.screen.get_rect()
 
         self.clock = pygame.time.Clock()
         self.icon_cache = IconCache()
+        self._frame_budget = FrameBudget(60)
+        self._dirty = DirtyTracker()
+        self._perf = PerfCounters()
+        self.fps = 60.0
         self.running = True
         self.booted = False
         self.logged_in = False
@@ -252,17 +262,30 @@ class LionOS:
     # ------------------------------------------------------------------ loop
     def run(self):
         while self.running:
-            dt = min(0.05, self.clock.tick(60) / 1000.0)
-            self._dt = dt
+            dt = min(MAX_DT, self.clock.tick(60) / 1000.0)
+            self._dt = self._frame_budget.tick(dt)
+            self._perf.begin_frame()
             for event in pygame.event.get():
                 self._handle_event(event)
-            self._update(dt)
+            self._update(self._dt)
             if not self._no_draw:
                 if self._needs_redraw or self._any_animating():
+                    self._perf.mark_redraw()
                     self._draw()
                     self._needs_redraw = False
+                    # Present only the dirty regions when few, else full-screen.
+                    if self._dirty.consume_full():
+                        pygame.display.flip()
+                    else:
+                        rects = self._dirty.consume_rects()
+                        if rects:
+                            pygame.display.update(rects)
+                        else:
+                            pygame.display.flip()
             else:
                 self._headless_tick()
+            self._perf.end_frame()
+            self.fps = self._perf.fps
         self.shutdown = True
         pygame.quit()
         return 0
@@ -335,6 +358,7 @@ class LionOS:
                 inst.update(dt)
             # window content rect may have changed
             if inst.window.content_rect != inst.rect:
+                self._dirty.mark(inst.window.rect)
                 inst.rect = pygame.Rect(inst.window.content_rect)
                 inst.on_resize(inst.rect)
             inst._last = pygame.Rect(inst.window.content_rect)
@@ -786,7 +810,10 @@ class LionOS:
             self._draw_boot()
         elif not self.logged_in:
             self._draw_login()
-        pygame.display.flip()
+        if self.config.show_fps:
+            f = self.get_font(14)
+            img = f.render(f"{self.fps:.0f} fps", True, self.theme.text)
+            self.screen.blit(img, (8, 8))
 
     def _draw_power_fade(self, label):
         s = self._fade_surf
