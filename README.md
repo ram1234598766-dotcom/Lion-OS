@@ -160,6 +160,9 @@ Theme changes **animate smoothly** between palettes:
 
 - **Performance engine** — cached window chrome (shadow/body/titlebar), prerendered
   wallpaper, dirty-flag redraw and a font cache keep the desktop smooth at 60fps.
+- **Memory-efficient rendering** — full-screen overlays, glow, taskbar and fade
+  surfaces are reused instead of reallocated each frame; app-icon tiles, glass
+  panels and fonts are cached; the System Monitor's graphs reuse one fill surface.
 - **Desktop icons** — double-click to launch, single-click to select, right-click
   the desktop for a context menu.
 - **Window manager** — drag, resize, **snap to edges and corners**, maximize,
