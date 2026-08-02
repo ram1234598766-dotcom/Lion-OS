@@ -53,6 +53,10 @@ class LionConfig:
     show_simulated: bool = False
     auto_login: bool = False
     lock_on_wake: bool = False
+    session_resume: bool = True
+    clipboard_enabled: bool = True
+    wizard_done: bool = False
+    pinned_apps: list = field(default_factory=list)
     mru_apps: list = field(default_factory=list)
     bookmarks: list = field(default_factory=list)
 

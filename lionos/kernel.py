@@ -19,6 +19,7 @@ import pygame
 from . import __version__
 from .config import ConfigStore, LionConfig, ensure_config_dir
 from .theme import Theme, THEMES, blend
+from .wizard import WIZARD_STEPS, load_profile, save_profile
 from .wm import (Window, WindowManager, TITLEBAR_H,
                  WINDOW_STATE_MAXIMIZED, WINDOW_STATE_MINIMIZED)
 from .widgets import Menu, Toast, draw_app_tile, draw_glass_panel, rounded_rect
@@ -123,6 +124,12 @@ class LionOS:
         self._login_focus = 0
         self._login_clock = time.time()
         self._login_shake = 0.0
+
+        # first-boot wizard
+        self.wizard_active = not self.config.wizard_done
+        self._wizard_step = 0
+        self._wizard_input = ""
+        self.wizard_profile = load_profile()
 
         # theme transition
         self._theme_from: Optional[Theme] = None
@@ -546,6 +553,9 @@ class LionOS:
 
     # --------------------------------------------------------------- login UI
     def _handle_login_event(self, event):
+        if getattr(self, "wizard_active", False):
+            self._handle_wizard_event(event)
+            return
         if event.type == pygame.KEYDOWN:
             if event.key == pygame.K_RETURN:
                 self._login_attempt += 1
@@ -573,6 +583,48 @@ class LionOS:
             except Exception:
                 pass
         self.show_toast("Welcome", f"Welcome back, {self.config.username}!", "success")
+
+    # ----------------------------------------------------------- wizard UI
+    def _handle_wizard_event(self, event):
+        if event.type == pygame.KEYDOWN and event.key in (pygame.K_RETURN, pygame.K_KP_ENTER):
+            self._advance_wizard()
+        elif event.type == pygame.KEYDOWN and event.key == pygame.K_LEFT:
+            self._cycle_theme(-1)
+        elif event.type == pygame.KEYDOWN and event.key == pygame.K_RIGHT:
+            self._cycle_theme(1)
+        elif event.type == pygame.KEYDOWN and event.key == pygame.K_BACKSPACE:
+            self._wizard_input = self._wizard_input[:-1]
+        elif getattr(event, "unicode", "") and event.unicode.isprintable():
+            self._wizard_input += event.unicode
+
+    def _cycle_theme(self, delta):
+        names = list(THEMES)
+        idx = names.index(self.config.theme) if self.config.theme in names else 0
+        self.config.theme = names[(idx + delta) % len(names)]
+        self._needs_redraw = True
+
+    def _advance_wizard(self):
+        step = WIZARD_STEPS[self._wizard_step]
+        if step == "name" and self._wizard_input:
+            self.wizard_profile["name"] = self._wizard_input
+            self.config.username = self._wizard_input
+        elif step == "theme":
+            self.wizard_profile["theme"] = self.config.theme
+        elif step == "pin":
+            self.wizard_profile["pinned"] = self.config.pinned_apps or \
+                ["Terminal", "File Manager", "Notes"]
+        elif step == "matters":
+            self.wizard_profile["matters"] = "general"
+        self._wizard_step += 1
+        self._wizard_input = ""
+        self._needs_redraw = True
+        if self._wizard_step >= len(WIZARD_STEPS):
+            save_profile(self.wizard_profile)
+            self.config.wizard_done = True
+            self.config.save()
+            self.wizard_active = False
+            if self.config.auto_login or not self.config.password:
+                self._do_login()
         self._needs_redraw = True
 
     # ---------------------------------------------------------- desktop icons
@@ -1257,7 +1309,50 @@ class LionOS:
             img = lfont.render(line, True, col)
             self.screen.blit(img, (self.screen_w // 2 - 150, self.screen_h // 2 + 30 + i * 22))
 
+    def _draw_wizard(self):
+        dim = self._dim_surf
+        dim.fill((8, 8, 14, 210))
+        self.screen.blit(dim, (0, 0))
+        cx = self.screen_w // 2
+        font = self.get_font(30)
+        title = font.render("Welcome to Lion-OS", True, self.theme.text)
+        self.screen.blit(title, title.get_rect(center=(cx, self.screen_h // 2 - 150)))
+        # progress dots
+        for i, _s in enumerate(WIZARD_STEPS):
+            color = self.theme.accent if i == self._wizard_step else self.theme.text_dim
+            pygame.draw.circle(self.screen, color, (cx - 60 + i * 40, self.screen_h // 2 - 110), 8)
+        # step prompt
+        prompts = {
+            "name": "What should we call you?",
+            "theme": "Pick a theme — press ←/→ to cycle, Enter to keep",
+            "pin": "We'll pin your essentials",
+            "matters": "You're all set!",
+        }
+        pfont = self.get_font(22)
+        step_name = WIZARD_STEPS[self._wizard_step]
+        pimg = pfont.render(prompts[step_name], True, self.theme.text)
+        self.screen.blit(pimg, pimg.get_rect(center=(cx, self.screen_h // 2 - 50)))
+        if step_name == "name":
+            box = pygame.Rect(cx - 160, self.screen_h // 2 + 0, 320, 44)
+            pygame.draw.rect(self.screen, (255, 255, 255, 40), box, border_radius=10)
+            pygame.draw.rect(self.screen, self.theme.accent, box, 1, border_radius=10)
+            val = self._wizard_input or "your name"
+            vimg = pfont.render(val, True,
+                                self.theme.text if self._wizard_input else self.theme.text_dim)
+            self.screen.blit(vimg, vimg.get_rect(center=box.center))
+        elif step_name == "theme":
+            timg = pfont.render(f"  {self.config.theme.title()}  ", True, self.theme.accent)
+            self.screen.blit(timg, timg.get_rect(center=(cx, self.screen_h // 2 + 20)))
+        elif step_name == "pin":
+            pinn = pfont.render("Terminal · File Manager · Notes", True, self.theme.text_dim)
+            self.screen.blit(pinn, pinn.get_rect(center=(cx, self.screen_h // 2 + 20)))
+        hint = self.get_font(15).render("Enter to continue", True, self.theme.text_dim)
+        self.screen.blit(hint, hint.get_rect(center=(cx, self.screen_h // 2 + 90)))
+
     def _draw_login(self):
+        if getattr(self, "wizard_active", False):
+            self._draw_wizard()
+            return
         dim = self._dim_surf
         dim.fill((8, 8, 14, 200))
         self.screen.blit(dim, (0, 0))
