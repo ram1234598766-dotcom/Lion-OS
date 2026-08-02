@@ -21,6 +21,26 @@ from .theme import Theme
 Color = Union[tuple, str]
 Rect = pygame.Rect
 
+# ---------------------------------------------------------------------------
+# Shared caches (avoid per-frame allocations)
+# ---------------------------------------------------------------------------
+_font_cache: dict = {}
+_tile_cache: dict = {}
+_glass_cache: dict = {}
+
+
+def cached_font(size: int, bold=False):
+    """Return a cached default-font instance. Avoids re-creating a Font on
+    every draw call, which churns memory and slows the loop."""
+    key = (size, bold)
+    f = _font_cache.get(key)
+    if f is None:
+        f = pygame.font.Font(None, size)
+        if bold:
+            f.set_bold(True)
+        _font_cache[key] = f
+    return f
+
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -247,7 +267,7 @@ class IconButton(Widget):
             bg = theme.hover
         if bg:
             rounded_rect(surface, r, self.radius, bg)
-        f = pygame.font.Font(None, int(r.height * 0.8))
+        f = cached_font(int(r.height * 0.8))
         img = f.render(self.glyph, True, self.color or theme.text)
         surface.blit(img, img.get_rect(center=r.center))
 
@@ -655,7 +675,7 @@ class ProgressBar(Widget):
                 fr = pygame.Rect(r.left, r.top, int(r.width * ratio), r.height)
                 rounded_rect(surface, fr, r.height // 2, self.color or theme.accent)
         if self.label:
-            f = pygame.font.Font(None, int(r.height * 0.8))
+            f = cached_font(int(r.height * 0.8))
             img = f.render(self.label, True, theme.text)
             surface.blit(img, img.get_rect(center=r.center))
 
@@ -759,8 +779,8 @@ class Toast:
             return
         w = 320
         h = 72
-        font = pygame.font.Font(None, 18)
-        small = pygame.font.Font(None, 15)
+        font = cached_font(18)
+        small = cached_font(15)
         x = pos[0]
         y = int(pos[1] - (1 - self.slide) * 30 - (1 - self.slide) * h * 0.2)
         s = pygame.Surface((w, h), pygame.SRCALPHA)
@@ -783,13 +803,17 @@ class Toast:
 # Window chrome drawing helpers
 # ---------------------------------------------------------------------------
 def draw_glass_panel(surface, rect, theme, radius=12, border=True):
-    """Draw a translucent glassmorphism panel."""
-    s = pygame.Surface(rect.size, pygame.SRCALPHA)
-    base = theme.glass if len(theme.glass) == 4 else theme.surface + (220,)
-    pygame.draw.rect(s, base, s.get_rect(), border_radius=radius)
-    if border:
-        bc = theme.glass_border
-        pygame.draw.rect(s, bc if len(bc) == 4 else bc + (60,), s.get_rect(), 1, border_radius=radius)
+    """Draw a translucent glassmorphism panel (cached by size + theme)."""
+    key = (rect.size, theme.glass, theme.glass_border, radius, border)
+    s = _glass_cache.get(key)
+    if s is None:
+        s = pygame.Surface(rect.size, pygame.SRCALPHA)
+        base = theme.glass if len(theme.glass) == 4 else theme.surface + (220,)
+        pygame.draw.rect(s, base, s.get_rect(), border_radius=radius)
+        if border:
+            bc = theme.glass_border
+            pygame.draw.rect(s, bc if len(bc) == 4 else bc + (60,), s.get_rect(), 1, border_radius=radius)
+        _glass_cache[key] = s
     surface.blit(s, rect.topleft)
 
 
@@ -797,39 +821,40 @@ def draw_app_tile(surface, rect, glyph, theme, hovered=False, pressed=False,
                   selected=False, font_size=None, label=None):
     """Draw a gradient app-icon tile with a glyph, used across the desktop.
 
-    Shared by the launcher grid, taskbar, desktop icons and About screen so
-    the identity is consistent.
+    The gradient base is cached per (size, colors) so desktop icons, launcher
+    tiles and taskbar icons reuse one surface instead of allocating a new
+    gradient (and a new font) on every frame.
     """
     r = pygame.Rect(rect)
     radius = max(6, int(r.height * 0.22))
-    # gradient background tile
-    tile = pygame.Surface(r.size, pygame.SRCALPHA)
-    g1 = theme.icon_grad1
-    g2 = theme.icon_grad2
-    for yy in range(r.height):
-        tt = yy / max(1, r.height - 1)
-        col = blend_color(g1, g2, tt)
-        pygame.draw.line(tile, col, (0, yy), (r.width, yy))
-    if pressed:
-        ov = pygame.Surface(r.size, pygame.SRCALPHA)
-        ov.fill((0, 0, 0, 40))
-        tile.blit(ov, (0, 0))
-    elif hovered or selected:
-        ov = pygame.Surface(r.size, pygame.SRCALPHA)
-        ov.fill((255, 255, 255, 26))
-        tile.blit(ov, (0, 0))
-    pygame.draw.rect(tile, (255, 255, 255, 46), tile.get_rect(), 1, border_radius=radius)
-    # clip glyph to tile
+    key = (r.size, theme.icon_grad1, theme.icon_grad2)
+    tile = _tile_cache.get(key)
+    if tile is None:
+        tile = pygame.Surface(r.size, pygame.SRCALPHA)
+        g1 = theme.icon_grad1
+        g2 = theme.icon_grad2
+        for yy in range(r.height):
+            tt = yy / max(1, r.height - 1)
+            col = blend_color(g1, g2, tt)
+            pygame.draw.line(tile, col, (0, yy), (r.width, yy))
+        pygame.draw.rect(tile, (255, 255, 255, 46), tile.get_rect(), 1, border_radius=radius)
+        _tile_cache[key] = tile
+    # clip glyph to tile rect (matches original behavior)
     old = surface.get_clip()
     clip = pygame.Rect(r)
     surface.set_clip(clip)
     surface.blit(tile, r.topleft)
-    f = pygame.font.Font(None, font_size or int(r.height * 0.62))
+    # hover/press overlay drawn directly (cheap) without re-rendering the base
+    if pressed:
+        pygame.draw.rect(surface, (0, 0, 0, 40), r, border_radius=radius)
+    elif hovered or selected:
+        pygame.draw.rect(surface, (255, 255, 255, 26), r, border_radius=radius)
+    f = cached_font(font_size or int(r.height * 0.62))
     img = f.render(glyph, True, (255, 255, 255))
     surface.blit(img, img.get_rect(center=r.center))
     surface.set_clip(old)
     if label:
-        lf = pygame.font.Font(None, 15)
+        lf = cached_font(15)
         limg = lf.render(label, True, theme.text)
         surface.blit(limg, limg.get_rect(midtop=(r.centerx, r.bottom + 6)))
     return r

@@ -14,7 +14,7 @@ from typing import List
 import pygame
 
 from .base import App
-from ..widgets import rounded_rect
+from ..widgets import cached_font, rounded_rect
 
 PROMPT_COLOR = (247, 148, 0)
 CMD_COLOR = (215, 215, 225)
@@ -301,7 +301,7 @@ class TerminalApp(App):
         get = getattr(self.os, "get_font", None)
         if get is not None:
             return get(self.font_size)
-        return pygame.font.Font(None, self.font_size)
+        return cached_font(self.font_size)
 
     def _max_scroll(self):
         font = self._font()

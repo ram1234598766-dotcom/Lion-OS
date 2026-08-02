@@ -8,7 +8,7 @@ from typing import List
 import pygame
 
 from .base import App
-from ..widgets import rounded_rect
+from ..widgets import cached_font, rounded_rect
 from ..ai.providers import get_provider, AIDisabled
 
 SYSTEM_PROMPT = (
@@ -157,7 +157,7 @@ class AIAssistantApp(App):
         return max(0, total - self._chat_rect().height + 20)
 
     def _message_height(self, m):
-        font = pygame.font.Font(None, self.os.config.font_size)
+        font = cached_font(self.os.config.font_size)
         max_w = self._chat_rect().width - 60
         lines = len(self._wrap(m["content"], font, max_w)) or 1
         return lines * 22 + 30
@@ -183,8 +183,8 @@ class AIAssistantApp(App):
 
     def draw(self, surface, rect):
         self.rect = rect
-        font = pygame.font.Font(None, self.os.config.font_size)
-        small = pygame.font.Font(None, 14)
+        font = cached_font(self.os.config.font_size)
+        small = cached_font(14)
         cr = self._chat_rect()
         rounded_rect(surface, cr, 12, self.theme.surface)
         # status header

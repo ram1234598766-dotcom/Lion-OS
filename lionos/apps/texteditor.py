@@ -8,7 +8,7 @@ import re
 import pygame
 
 from .base import App
-from ..widgets import Button, rounded_rect
+from ..widgets import Button, cached_font, rounded_rect
 
 # lightweight syntax highlighting for common languages
 TOKEN_PATTERNS = [
@@ -92,7 +92,7 @@ class TextEditorApp(App):
         """Font used for the text area, sized to the configured font size."""
         if hasattr(self.os, "get_font"):
             return self.os.get_font(self.font_size)
-        return pygame.font.Font(None, self.font_size)
+        return cached_font(self.font_size)
 
     def _fill_rgba(self, surface, rect, rgba):
         """Blit a translucent rectangle (theme RGBA colors need a temp surface)."""
@@ -401,7 +401,7 @@ class TextEditorApp(App):
         # toolbar
         tb = self._toolbar_rect()
         rounded_rect(surface, tb, 0, self.theme.surface_alt)
-        font = pygame.font.Font(None, self.os.config.font_size)
+        font = cached_font(self.os.config.font_size)
         if self.path:
             label = f"● {self.status}" if self.dirty else self.status
         else:

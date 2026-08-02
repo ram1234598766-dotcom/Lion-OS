@@ -7,7 +7,7 @@ import os
 import pygame
 
 from .base import App
-from ..widgets import Button, ListBox, ListItem, rounded_rect, wrap_text
+from ..widgets import Button, ListBox, ListItem, cached_font, rounded_rect, wrap_text
 
 
 class NotesApp(App):
@@ -263,7 +263,7 @@ class NotesApp(App):
         self._dirty_since_save = False
 
     def _max_scroll(self):
-        font = pygame.font.Font(None, self.os.config.font_size)
+        font = cached_font(self.os.config.font_size)
         lh = font.get_height() + 6
         return max(0, len(self.edit_content.split("\n")) * lh - self._content_rect().height + 30)
 
@@ -280,8 +280,8 @@ class NotesApp(App):
 
     def draw(self, surface, rect):
         self.rect = rect
-        font = pygame.font.Font(None, self.os.config.font_size)
-        small = pygame.font.Font(None, 15)
+        font = cached_font(self.os.config.font_size)
+        small = cached_font(15)
         # buttons
         for label, b, primary in (("＋ New", self._new_btn(), True),
                                   ("Delete", self._delete_btn(), False),
@@ -310,14 +310,14 @@ class NotesApp(App):
         ttitle = self._current_title()
         self.set_title(ttitle or self.name)
         display = ttitle or "No note selected"
-        tfont = pygame.font.Font(None, self.os.config.font_size + 4)
+        tfont = cached_font(self.os.config.font_size + 4)
         timg = tfont.render(display, True, self.theme.accent)
         surface.blit(timg, (cr.x + 12, cr.y + 10))
         # content
         clip = pygame.Rect(cr.x + 4, cr.y + 44, cr.width - 16, cr.height - 52)
         old = surface.get_clip()
         surface.set_clip(clip)
-        font2 = pygame.font.Font(None, self.os.config.font_size)
+        font2 = cached_font(self.os.config.font_size)
         lh = font2.get_height() + 6
         lines = self.edit_content.split("\n")
         for i, ln in enumerate(lines):

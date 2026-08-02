@@ -8,7 +8,7 @@ import pygame
 
 from .base import App
 from .. import APP_NAME, VERSION, __codename__, __build__
-from ..widgets import rounded_rect
+from ..widgets import cached_font, rounded_rect
 
 
 class AboutApp(App):
@@ -34,9 +34,9 @@ class AboutApp(App):
 
     def draw(self, surface, rect):
         self.rect = rect
-        font = pygame.font.Font(None, 26)
-        small = pygame.font.Font(None, 16)
-        mid = font = pygame.font.Font(None, 34)
+        font = cached_font(26)
+        small = cached_font(16)
+        mid = font = cached_font(34)
 
         cx = rect.centerx
         y = rect.y + 40

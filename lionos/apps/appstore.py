@@ -8,7 +8,7 @@ import sys
 import pygame
 
 from .base import App
-from ..widgets import Button, ProgressBar, rounded_rect
+from ..widgets import Button, ProgressBar, cached_font, rounded_rect
 
 CATALOG = [
     # (name, pkg, description, icon)
@@ -98,8 +98,8 @@ class AppStoreApp(App):
 
     def draw(self, surface, rect):
         self.rect = rect
-        font = pygame.font.Font(None, self.os.config.font_size)
-        small = pygame.font.Font(None, 14)
+        font = cached_font(self.os.config.font_size)
+        small = cached_font(14)
         t = font.render("App Store", True, self.theme.text)
         surface.blit(t, (rect.x + 16, rect.y + 14))
         note = small.render("Installs Python packages system-wide via pip", True, self.theme.text_dim)

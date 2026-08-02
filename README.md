@@ -12,7 +12,7 @@ with a single command.
 
 ![Python](https://img.shields.io/badge/python-3.9%2B-blue)
 ![License](https://img.shields.io/badge/license-MIT-green)
-![version](https://img.shields.io/badge/version-1.1.0-orange)
+![version](https://img.shields.io/badge/version-1.1.1-orange)
 ![tests](https://img.shields.io/badge/tests-35%20passing-brightgreen)
 
 </div>
@@ -31,6 +31,12 @@ cloud models.
 The v1.1 release ("Refined") added a performance engine (cached window chrome,
 prerendered wallpaper), window animations, animated theme transitions, and deep
 feature upgrades across the most-used apps.
+
+The v1.1.1 patch release focuses on **memory efficiency**: the kernel now reuses
+full-screen overlay, glow, taskbar and fade surfaces instead of allocating them
+every frame; app-icon tiles and glass panels are cached; fonts are shared through
+a global cache instead of being rebuilt per draw call; and the System Monitor's
+graph no longer allocates a fresh fill surface each frame.
 
 It's designed to be simple to run and genuinely fun to explore:
 
@@ -228,7 +234,7 @@ workflow run.
 Pre-built wheels are attached to [GitHub Releases](https://github.com/ram1234598766-dotcom/Lion-OS/releases):
 
 ```
-pip install https://github.com/ram1234598766-dotcom/Lion-OS/releases/download/v1.1.0/lion_os-1.1.0-py3-none-any.whl
+pip install https://github.com/ram1234598766-dotcom/Lion-OS/releases/download/v1.1.1/lion_os-1.1.1-py3-none-any.whl
 ```
 
 ---

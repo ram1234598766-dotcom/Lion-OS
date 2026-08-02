@@ -7,7 +7,7 @@ import math
 import pygame
 
 from .base import App
-from ..widgets import Button, rounded_rect
+from ..widgets import Button, cached_font, rounded_rect
 
 
 class CalculatorApp(App):
@@ -90,7 +90,7 @@ class CalculatorApp(App):
         get_font = getattr(self.os, "get_font", None)
         if get_font is not None:
             return get_font(size)
-        return pygame.font.Font(None, size)
+        return cached_font(size)
 
     def _btn_rect(self, r, c):
         pad = 6

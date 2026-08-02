@@ -5,7 +5,7 @@ from __future__ import annotations
 import pygame
 
 from .base import App
-from ..widgets import rounded_rect
+from ..widgets import cached_font, rounded_rect
 
 FEATURES = [
     ("🪟", "Window Manager", "Drag, resize, snap and stack windows"),
@@ -82,8 +82,8 @@ class WelcomeApp(App):
 
     def draw(self, surface, rect):
         self.rect = rect
-        font = pygame.font.Font(None, self.os.config.font_size + 6)
-        small = pygame.font.Font(None, 15)
+        font = cached_font(self.os.config.font_size + 6)
+        small = cached_font(15)
         r = self._content()
         clip = pygame.Rect(r)
         old = surface.get_clip()

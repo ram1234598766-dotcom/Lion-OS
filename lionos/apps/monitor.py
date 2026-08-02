@@ -8,7 +8,7 @@ from collections import deque
 import pygame
 
 from .base import App
-from ..widgets import rounded_rect
+from ..widgets import cached_font, rounded_rect
 
 try:
     import psutil
@@ -37,6 +37,7 @@ class SystemMonitorApp(App):
         self.net = (0.0, 0.0)
         self._last_net = None
         self.scroll = 0
+        self._fill_cache = {}
 
     def on_resize(self, rect):
         self.rect = rect
@@ -77,8 +78,8 @@ class SystemMonitorApp(App):
 
     def _graph(self, rect, history, color, label, value):
         rounded_rect(self.surface, rect, 10, self.theme.surface_alt)
-        font = pygame.font.Font(None, self.os.config.font_size)
-        small = pygame.font.Font(None, 14)
+        font = cached_font(self.os.config.font_size)
+        small = cached_font(14)
         l = font.render(label, True, self.theme.text)
         self.surface.blit(l, (rect.x + 14, rect.y + 10))
         v = font.render(f"{value:.0f}%", True, color)
@@ -97,8 +98,12 @@ class SystemMonitorApp(App):
                 pts.append((x, y))
             if len(pts) > 1:
                 pygame.draw.lines(self.surface, color, False, pts, 2)
-                # area fill
-                fill = pygame.Surface((gw, gh), pygame.SRCALPHA)
+                # area fill (reuse a size-keyed surface, not a fresh one)
+                fill = self._fill_cache.get((gw, gh))
+                if fill is None:
+                    fill = pygame.Surface((int(gw), int(gh)), pygame.SRCALPHA)
+                    self._fill_cache[(gw, gh)] = fill
+                fill.fill((0, 0, 0, 0))
                 for i in range(1, len(pts)):
                     pygame.draw.line(fill, color + (60,), (pts[i - 1][0] - gx, pts[i - 1][1] - gy),
                                      (pts[i][0] - gx, pts[i][1] - gy), 2)
@@ -114,8 +119,8 @@ class SystemMonitorApp(App):
     def draw(self, surface, rect):
         self.rect = rect
         self.surface = surface
-        font = pygame.font.Font(None, self.os.config.font_size)
-        small = pygame.font.Font(None, 14)
+        font = cached_font(self.os.config.font_size)
+        small = cached_font(14)
 
         info = []
         if HAVE_PSUTIL:

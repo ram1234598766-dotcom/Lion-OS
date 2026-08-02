@@ -8,7 +8,7 @@ import random
 import pygame
 
 from .base import App
-from ..widgets import TextInput, rounded_rect
+from ..widgets import TextInput, cached_font, rounded_rect
 
 
 class MediaPlayerApp(App):
@@ -416,8 +416,8 @@ class MediaPlayerApp(App):
 
     def draw(self, surface, rect):
         self.rect = rect
-        font = pygame.font.Font(None, self.os.config.font_size)
-        small = pygame.font.Font(None, 14)
+        font = cached_font(self.os.config.font_size)
+        small = cached_font(14)
         # open button
         ob = self._open_btn()
         rounded_rect(surface, ob, 8, self.theme.surface_alt)

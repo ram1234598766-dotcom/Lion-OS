@@ -313,6 +313,8 @@ class WindowManager:
         self._down_pos = None
         self._down_win = None
         self._maximize_drag = False
+        self._snap_preview_surf = None   # cached snap-preview surface
+        self._snap_preview_size = None
         # alt-tab switcher
         self.alt_tab_active = False
         self._alt_tab_idx = 0
@@ -540,7 +542,11 @@ class WindowManager:
         if not sp:
             return
         r = sp["rect"]
-        s = pygame.Surface((r.width, r.height), pygame.SRCALPHA)
+        if self._snap_preview_size != r.size:
+            self._snap_preview_surf = pygame.Surface(r.size, pygame.SRCALPHA)
+            self._snap_preview_size = r.size
+        s = self._snap_preview_surf
+        s.fill((0, 0, 0, 0))
         accent = theme.accent
         pygame.draw.rect(s, accent + (70,), s.get_rect(), border_radius=10)
         pygame.draw.rect(s, accent + (200,), s.get_rect(), 2, border_radius=10)

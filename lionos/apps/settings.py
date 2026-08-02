@@ -9,7 +9,7 @@ import pygame
 
 from .base import App
 from ..theme import THEMES, THEME_NAMES
-from ..widgets import Button, Toggle, rounded_rect
+from ..widgets import Button, Toggle, cached_font, rounded_rect
 
 
 class SettingsApp(App):
@@ -182,8 +182,8 @@ class SettingsApp(App):
 
     def draw(self, surface, rect):
         self.rect = rect
-        font = pygame.font.Font(None, self.os.config.font_size)
-        small = pygame.font.Font(None, 15)
+        font = cached_font(self.os.config.font_size)
+        small = cached_font(15)
 
         # tabs
         for i, t in enumerate(self.tabs):

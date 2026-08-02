@@ -7,7 +7,7 @@ import os
 import pygame
 
 from .base import App
-from ..widgets import Button, rounded_rect
+from ..widgets import Button, cached_font, rounded_rect
 
 COLOR_PALETTE = [
     (0, 0, 0), (90, 90, 100), (150, 150, 160), (240, 240, 245),
@@ -206,8 +206,8 @@ class PaintApp(App):
 
     def draw(self, surface, rect):
         self.rect = rect
-        font = pygame.font.Font(None, self.os.config.font_size)
-        small = pygame.font.Font(None, 14)
+        font = cached_font(self.os.config.font_size)
+        small = cached_font(14)
         # toolbar
         tr = self._tool_rect()
         rounded_rect(surface, tr, 8, self.theme.surface_alt)

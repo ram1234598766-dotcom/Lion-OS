@@ -10,7 +10,7 @@ import urllib.parse
 import pygame
 
 from .base import App
-from ..widgets import rounded_rect
+from ..widgets import cached_font, rounded_rect
 
 import requests
 
@@ -186,7 +186,7 @@ class BrowserApp(App):
     def update(self, dt):
         # rebuild wrapped lines periodically
         if self.result_text and not self._lines:
-            font = pygame.font.Font(None, self.os.config.font_size)
+            font = cached_font(self.os.config.font_size)
             max_w = self._content_rect().width
             self._lines = self._wrap(self.result_text, font, max_w)
 
@@ -208,8 +208,8 @@ class BrowserApp(App):
 
     def draw(self, surface, rect):
         self.rect = rect
-        font = pygame.font.Font(None, self.os.config.font_size)
-        small = pygame.font.Font(None, 14)
+        font = cached_font(self.os.config.font_size)
+        small = cached_font(14)
         tb = self._toolbar_rect()
         rounded_rect(surface, tb, 8, self.theme.surface_alt)
         for i, glyph in enumerate(("◀", "▶", "⟳", "⌂")):

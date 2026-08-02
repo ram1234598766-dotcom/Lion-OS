@@ -135,6 +135,15 @@ class LionOS:
         self._wallpaper_key = None
         self._needs_redraw = True
 
+        # reusable full-screen overlays (avoid a fresh screen-sized SRCALPHA
+        # surface allocation on every frame)
+        self._dim_surf = pygame.Surface((self.screen_w, self.screen_h), pygame.SRCALPHA)
+        self._glow_surf = pygame.Surface((self.screen_w, self.screen_h), pygame.SRCALPHA)
+        self._fade_surf = pygame.Surface((self.screen_w, self.screen_h), pygame.SRCALPHA)
+        self._taskbar_surf = pygame.Surface((self.screen_w, 46), pygame.SRCALPHA)
+        self._window_fade_cache: Dict[tuple, pygame.Surface] = {}
+        self._tooltip_surf = None      # reusable tooltip background
+
         # hidden for testing
         self._no_draw = os.environ.get("LION_OS_HEADLESS") == "1"
         self._smoke_test_done = False
@@ -778,7 +787,7 @@ class LionOS:
         pygame.display.flip()
 
     def _draw_power_fade(self, label):
-        s = pygame.Surface((self.screen_w, self.screen_h), pygame.SRCALPHA)
+        s = self._fade_surf
         s.fill((0, 0, 0, int(255 * self._power_fade)))
         self.screen.blit(s, (0, 0))
         if self._power_fade > 0.5:
@@ -805,10 +814,11 @@ class LionOS:
     def _draw_wallpaper(self):
         self._ensure_wallpaper()
         self.screen.blit(self._wallpaper_surf, (0, 0))
-        # animated glow (cheap: single translucent surface reused)
+        # animated glow (drawn onto a single reusable surface, not a fresh one)
         cx = self.screen_w // 2
         cy = self.screen_h // 2
-        g = pygame.Surface((self.screen_w, self.screen_h), pygame.SRCALPHA)
+        g = self._glow_surf
+        g.fill((0, 0, 0, 0))
         for i in range(3):
             radius = int(160 + (self._bg_shift % 1.0) * 60 + i * 80)
             alpha = 8 - i * 2
@@ -887,9 +897,12 @@ class LionOS:
                 self._draw_error_screen(cr, e)
             self.screen.set_clip(old)
 
-        # apply fade for close/minimize
+        # apply fade for close/minimize (reuse a cached size-keyed surface)
         if alpha < 255:
-            fade = pygame.Surface(scaled_rect.size, pygame.SRCALPHA)
+            fade = self._window_fade_cache.get(scaled_rect.size)
+            if fade is None:
+                fade = pygame.Surface(scaled_rect.size, pygame.SRCALPHA)
+                self._window_fade_cache[scaled_rect.size] = fade
             fade.fill((0, 0, 0, 255 - alpha))
             self.screen.blit(fade, scaled_rect.topleft)
 
@@ -936,8 +949,9 @@ class LionOS:
     def _draw_taskbar(self):
         h = 46
         tb = pygame.Rect(0, self.screen_h - h, self.screen_w, h)
-        # translucent bar
-        s = pygame.Surface((self.screen_w, h), pygame.SRCALPHA)
+        # translucent bar (drawn onto a reusable surface)
+        s = self._taskbar_surf
+        s.fill((0, 0, 0, 0))
         base = self.theme.taskbar
         pygame.draw.rect(s, base[:4] if len(base) == 4 else base + (235,), s.get_rect())
         self.screen.blit(s, tb.topleft)
@@ -965,10 +979,14 @@ class LionOS:
             font = self.get_font(self.config.font_size)
             img = font.render(app.icon, True, self.theme.text)
             self.screen.blit(img, img.get_rect(center=item.center))
-            # tooltip
+            # tooltip (reuse cached background surface)
             if item.collidepoint(pygame.mouse.get_pos()):
                 tip = font.render(app.name, True, self.theme.text)
-                bg = pygame.Surface((tip.get_width() + 16, tip.get_height() + 8), pygame.SRCALPHA)
+                bg = self._tooltip_surf
+                if bg is None or bg.get_width() < tip.get_width() + 16 or bg.get_height() < tip.get_height() + 8:
+                    bg = pygame.Surface((tip.get_width() + 16, tip.get_height() + 8), pygame.SRCALPHA)
+                    self._tooltip_surf = bg
+                bg.fill((0, 0, 0, 0))
                 pygame.draw.rect(bg, (40, 40, 50, 220), bg.get_rect(), border_radius=6)
                 bg.blit(tip, (8, 4))
                 self.screen.blit(bg, (item.x, tb.y - tip.get_height() - 16))
@@ -1002,8 +1020,8 @@ class LionOS:
     def _draw_launcher(self):
         if not self.launcher_open:
             return
-        # dim background
-        dim = pygame.Surface((self.screen_w, self.screen_h), pygame.SRCALPHA)
+        # dim background (reused surface)
+        dim = self._dim_surf
         dim.fill((10, 10, 18, 180))
         self.screen.blit(dim, (0, 0))
         # title
@@ -1078,7 +1096,7 @@ class LionOS:
     def _draw_power_menu(self):
         if not self.power_menu_open:
             return
-        dim = pygame.Surface((self.screen_w, self.screen_h), pygame.SRCALPHA)
+        dim = self._dim_surf
         dim.fill((10, 10, 18, 180))
         self.screen.blit(dim, (0, 0))
         panel = self._power_menu_panel()
@@ -1104,7 +1122,7 @@ class LionOS:
         order = self.wm._alt_tab_order
         if not order:
             return
-        dim = pygame.Surface((self.screen_w, self.screen_h), pygame.SRCALPHA)
+        dim = self._dim_surf
         dim.fill((10, 10, 18, 120))
         self.screen.blit(dim, (0, 0))
         n = len(order)
@@ -1164,7 +1182,7 @@ class LionOS:
             self.screen.blit(img, (self.screen_w // 2 - 150, self.screen_h // 2 + 30 + i * 22))
 
     def _draw_login(self):
-        dim = pygame.Surface((self.screen_w, self.screen_h), pygame.SRCALPHA)
+        dim = self._dim_surf
         dim.fill((8, 8, 14, 200))
         self.screen.blit(dim, (0, 0))
         cx = self.screen_w // 2

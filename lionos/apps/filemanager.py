@@ -12,7 +12,7 @@ from datetime import datetime
 import pygame
 
 from .base import App
-from ..widgets import Button, rounded_rect, wrap_text
+from ..widgets import Button, cached_font, rounded_rect, wrap_text
 
 HIDDEN_PREFIXES = (".", "$")
 
@@ -283,7 +283,7 @@ class FileManagerApp(App):
     def _breadcrumb_at(self, pos):
         if self.search:
             return None
-        font = pygame.font.Font(None, 15)
+        font = cached_font(15)
         for b in self._breadcrumb_rects(font):
             if b["rect"].collidepoint(pos):
                 return b
@@ -428,8 +428,8 @@ class FileManagerApp(App):
 
     def draw(self, surface, rect):
         self.rect = rect
-        font = pygame.font.Font(None, self.os.config.font_size)
-        small = pygame.font.Font(None, 15)
+        font = cached_font(self.os.config.font_size)
+        small = cached_font(15)
         # toolbar
         tb = self._toolbar_rect()
         rounded_rect(surface, tb, 0, self.theme.surface_alt)
