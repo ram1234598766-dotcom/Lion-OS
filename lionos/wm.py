@@ -125,6 +125,7 @@ class Window:
         elif kind == _ANIM_MINIMIZE:
             self.anim_scale = 1.0 - 0.35 * ease
             self.anim_alpha = int(255 * (1.0 - 0.6 * ease))
+            self.anim_slide = (1.0 - ease) * -36   # slide down toward the taskbar
         elif kind == _ANIM_MAXIMIZE:
             self.anim_scale = 0.92 + 0.08 * ease
             self.anim_alpha = 255

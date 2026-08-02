@@ -195,6 +195,10 @@ class LionOS:
         self._window_fade_cache: Dict[tuple, pygame.Surface] = {}
         self._content_ph_cache: Dict[tuple, pygame.Surface] = {}
         self._focus_glow_cache: Dict[tuple, pygame.Surface] = {}
+        self._pulse_ring_cache: Dict[tuple, pygame.Surface] = {}
+        self._desktop_entrance_t = 0.0
+        self.clipboard_palette_open = False
+        self._clipboard_palette_idx = 0
         self._tooltip_surf = None      # reusable tooltip background
 
         # hidden for testing
@@ -331,8 +335,7 @@ class LionOS:
         img = font.render(txt, True, self.theme.text if self.search_query else self.theme.text_dim)
         self.screen.blit(img, (box.x + 16, box.centery - img.get_height() // 2))
         y = box.bottom + 12
-        results = self.search_results()[:8]
-        for r in results:
+        for r in self.search_results()[:8]:
             row = pygame.Rect(cx - 260, y, 520, 34)
             pygame.draw.rect(self.screen, self.theme.surface_alt, row, border_radius=8)
             t = font.render(r["title"], True, self.theme.text)
@@ -340,6 +343,73 @@ class LionOS:
             s = self.get_font(14).render(r["source"], True, self.theme.accent)
             self.screen.blit(s, (row.right - 12 - s.get_width(), row.y + 9))
             y += 40
+
+    def _draw_notification_center(self):
+        if not self.notification_center_open:
+            return
+        panel = pygame.Rect(self.screen_w - 320, self.screen_h - 46 - 300, 300, 280)
+        draw_glass_panel(self.screen, panel, self.theme, radius=12)
+        title = self.get_font(16).render("Notifications", True, self.theme.text)
+        self.screen.blit(title, (panel.x + 12, panel.y + 10))
+        y = panel.y + 40
+        if not self._notifications:
+            empty = self.get_font(14).render("No notifications", True, self.theme.text_dim)
+            self.screen.blit(empty, (panel.x + 12, y))
+            return
+        for n in self._notifications[-6:]:
+            col = {"info": self.theme.info, "success": self.theme.success,
+                   "warn": self.theme.warn, "error": self.theme.danger}.get(n.kind, self.theme.info)
+            pygame.draw.circle(self.screen, col, (panel.x + 22, y + 8), 5)
+            t = self.get_font(15).render(n.title, True, self.theme.text)
+            self.screen.blit(t, (panel.x + 36, y))
+            b = self.get_font(13).render(n.body[:42], True, self.theme.text_dim)
+            self.screen.blit(b, (panel.x + 36, y + 18))
+            y += 44
+        clear = pygame.Rect(panel.right - 90, panel.bottom - 30, 78, 24)
+        pygame.draw.rect(self.screen, self.theme.surface_alt, clear, border_radius=6)
+        c = self.get_font(13).render("Clear all", True, self.theme.accent)
+        self.screen.blit(c, c.get_rect(center=clear.center))
+
+    def _draw_clipboard_palette(self):
+        if not self.clipboard_palette_open:
+            return
+        entries = self.clipboard.history()
+        panel = pygame.Rect(self.screen_w // 2 - 220, self.screen_h // 2 - 160, 440, 320)
+        draw_glass_panel(self.screen, panel, self.theme, radius=12)
+        title = self.get_font(18).render("Clipboard history", True, self.theme.text)
+        self.screen.blit(title, (panel.x + 14, panel.y + 10))
+        y = panel.y + 44
+        if not entries:
+            e = self.get_font(14).render("Empty", True, self.theme.text_dim)
+            self.screen.blit(e, (panel.x + 14, y))
+            return
+        self._clipboard_palette_idx = min(self._clipboard_palette_idx, len(entries) - 1)
+        for i, e in enumerate(entries[:10]):
+            row = pygame.Rect(panel.x + 10, y, panel.width - 20, 26)
+            if i == self._clipboard_palette_idx:
+                pygame.draw.rect(self.screen, self.theme.accent + (50,), row, border_radius=6)
+            t = self.get_font(14).render(e["value"][:50] or "…", True, self.theme.text)
+            self.screen.blit(t, (row.x + 8, row.y + 4))
+            y += 28
+        hint = self.get_font(13).render("Enter to copy · Esc to close", True, self.theme.text_dim)
+        self.screen.blit(hint, (panel.x + 14, panel.bottom - 26))
+
+    def _handle_clipboard_palette_event(self, event):
+        entries = self.clipboard.history()
+        if event.type == pygame.KEYDOWN:
+            if event.key in (pygame.K_ESCAPE,):
+                self.clipboard_palette_open = False
+            elif event.key == pygame.K_DOWN:
+                self._clipboard_palette_idx = min(len(entries) - 1,
+                                                  self._clipboard_palette_idx + 1)
+            elif event.key == pygame.K_UP:
+                self._clipboard_palette_idx = max(0, self._clipboard_palette_idx - 1)
+            elif event.key in (pygame.K_RETURN, pygame.K_KP_ENTER) and entries:
+                sel = entries[self._clipboard_palette_idx]
+                self.clipboard.copy(sel["kind"], sel["value"])
+                self.clipboard_palette_open = False
+                self.show_toast("Clipboard", "Copied to clipboard", "success")
+        self._needs_redraw = True
 
     def take_screenshot(self):
         try:
@@ -567,6 +637,7 @@ class LionOS:
         self._update_notifications(dt)
         self._launcher_open_t = max(0.0, min(1.0, self._launcher_open_t +
                                              (self._dt * 3.0 if self.launcher_open else -self._dt * 6.0)))
+        self._desktop_entrance_t = min(1.0, self._desktop_entrance_t + self._dt * 0.8)
 
         # power-off fade
         if self._shutting_down or self._restarting:
@@ -672,6 +743,15 @@ class LionOS:
         if event.type == pygame.KEYDOWN and event.key == pygame.K_F2:
             self.toggle_search()
             return
+        # clipboard history palette (Super+V)
+        if self.clipboard_palette_open:
+            self._handle_clipboard_palette_event(event)
+            return
+        if event.type == pygame.KEYDOWN and event.key == pygame.K_v and \
+           (event.mod & (pygame.KMOD_LGUI | pygame.KMOD_RGUI)):
+            self.clipboard_palette_open = not self.clipboard_palette_open
+            self._needs_redraw = True
+            return
 
         # context menu
         if self.context_menu:
@@ -743,6 +823,12 @@ class LionOS:
                     if event.type == pygame.MOUSEBUTTONDOWN:
                         self.power_menu_open = not self.power_menu_open
                         self.launcher_open = False
+                        return
+                # notification center (tray bell area, near the top-right)
+                ntf = pygame.Rect(self.screen_w - 94, tb_top + 6, 40, 34)
+                if ntf.collidepoint(pos):
+                    if event.type == pygame.MOUSEBUTTONDOWN:
+                        self.notification_center_open = not self.notification_center_open
                         return
                 # running app icons
                 x = 82
@@ -1201,6 +1287,8 @@ class LionOS:
         self._draw_windows()
         self._draw_launcher()
         self._draw_search()
+        self._draw_notification_center()
+        self._draw_clipboard_palette()
         self._draw_power_menu()
         self._draw_alt_tab()
         self._draw_context_menu()
@@ -1294,18 +1382,20 @@ class LionOS:
     def _draw_desktop_icons(self):
         if not self.logged_in:
             return
-        for (label, app), rect in self._desktop_icon_rects():
+        for idx, ((label, app), rect) in enumerate(self._desktop_icon_rects()):
             cls = self.apps_registry.get(app)
             glyph = cls.icon if cls else "◈"
             hovered = rect.collidepoint(pygame.mouse.get_pos())
             selected = self._desktop_sel == label
             tile = pygame.Rect(rect.x, rect.y, rect.width, rect.height - 22)
+            ent = max(0.0, min(1.0, self._desktop_entrance_t * 2.2 - idx * 0.22))
             draw_app_tile(self.screen, tile, glyph, self.theme,
                           hovered=hovered, selected=selected,
                           icon_cache=self.icon_cache,
                           scene=APP_ICONS.get(app) or (glyph_scene(glyph) if glyph else None),
                           scene_id=app,
-                          hover_t=self._hover_t(("desk", label), tile))
+                          hover_t=self._hover_t(("desk", label), tile),
+                          enter_t=ent)
             font = self.get_font(14)
             limg = font.render(label, True,
                                self.theme.text if selected else self.theme.text_dim)
@@ -1499,6 +1589,18 @@ class LionOS:
                 pygame.draw.rect(self.screen, self.theme.hover[:3] if len(self.theme.hover) == 3 else self.theme.hover, item, border_radius=6)
             elif focused:
                 pygame.draw.rect(self.screen, self.theme.taskbar_active[:3] + (40,), item, border_radius=6)
+            else:
+                # gentle life pulse on unfocused running apps
+                import math as _m
+                p = 0.5 + 0.5 * _m.sin(time.time() * 3.0 + x * 0.1)
+                ring = self._pulse_ring_cache.get(item.size)
+                if ring is None:
+                    ring = pygame.Surface(item.size, pygame.SRCALPHA)
+                    pygame.draw.rect(ring, self.theme.accent[:3] + (40,),
+                                     ring.get_rect(), 2, border_radius=6)
+                    self._pulse_ring_cache[item.size] = ring
+                ring.set_alpha(int(40 + 110 * p))
+                self.screen.blit(ring, item.topleft)
             pygame.draw.rect(self.screen, self.theme.taskbar_active[:3] if focused else (100, 100, 120), (item.x + 14, item.bottom - 3, 16, 3), border_radius=2)
             font = self.get_font(self.config.font_size)
             img = font.render(app.icon, True, self.theme.text)
