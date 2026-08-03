@@ -24,6 +24,20 @@ The old Python desktop-OS release line (v1.0.0-v2.0.7) was removed from this
 repo to begin the from-scratch kernel; its history is preserved in this repo's
 git history and mirrored privately for reference.
 
+## Package (GitHub Packages / GHCR)
+
+LionOS is published as a container package on the repo's **Packages** tab
+(`ghcr.io/ram1234598766-dotcom/lion-os/lion`). The image bundles QEMU + the
+bootable kernel image and runs it headless, streaming the serial output:
+
+```sh
+docker run --rm ghcr.io/ram1234598766-dotcom/lion-os/lion
+# expect: LIONOS_INIT_OK
+```
+
+Published by `.github/workflows/publish.yml` (a workflow push — not a manual
+`docker push` — is what links the package to the repo and makes it public).
+
 ## Layout
 
 | Path          | Purpose                                       | Active from |
