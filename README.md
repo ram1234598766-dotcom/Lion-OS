@@ -6,12 +6,18 @@ week and each week's deliverables must meet its "Done when" criterion.
 
 ## Status
 
-- **Month 1, Week 1 — Toolchain, bootloader placeholder, CI smoke test** *(this week)*
+- **Month 1, Week 1 — Toolchain, bootloader placeholder, CI smoke test**
   - Rust nightly + freestanding target + non-PIE 1 MiB link              — **done**
   - Repo skeleton (`/bootloader /kernel /launcher /docs /tests`)       — **done**
   - `gitleaks` secret-scanning pre-commit hook (blocks fake secrets)    — **done**
   - Kernel stub boots under QEMU and prints `LIONOS_INIT_OK` over serial — **done**
   - CI smoke test boots headless and asserts the marker                  — **done**
+- **Month 1, Week 2 — Cross-platform launcher CLI** *(this week)*
+  - `lionos run` / `doctor` / `update` (clap)                            — **done**
+  - `doctor` detects QEMU and prints per-OS install help                  — **done**
+  - `run --headless` boots the kernel end-to-end                          — **done**
+  - `update` SHA-256-verifies downloads; corrupted ones are refused       — **done**
+  - CI cross-platform matrix (macOS/Windows/Linux) + launcher e2e         — **in progress**
 
 The old Python desktop-OS release line (v1.0.0-v2.0.7) was removed from this
 repo to begin the from-scratch kernel; its history is preserved in this repo's
@@ -32,7 +38,9 @@ git history and mirrored privately for reference.
 See `docs/DEV_SETUP.md` for prerequisites and one-time setup.
 
 ```sh
-cargo bootimage --manifest-path kernel/Cargo.toml
-qemu-system-x86_64 -drive format=raw,file=target/x86_64-unknown-none/debug/bootimage-lionos-kernel.bin -serial stdio
-# expect: LIONOS_INIT_OK
+cd kernel && cargo build && cargo bootimage && cd ..   # build bootable kernel image
+cd launcher && cargo build && cd ..                    # build the `lionos` CLI
+
+./launcher/target/debug/lionos run --headless           # boot; expect LIONOS_INIT_OK
+./launcher/target/debug/lionos doctor                   # host toolchain check
 ```

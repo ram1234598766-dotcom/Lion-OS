@@ -53,15 +53,33 @@ ln -sf ~/.venvs/prc/bin/pre-commit ~/.local/bin/pre-commit
 pre-commit install          # registers .pre-commit-config.yaml (gitleaks) into the repo
 ```
 
-## 2. Running the kernel
+## 2. Building and running
 
-Build the bootable disk image, then boot it under QEMU:
+The kernel and the host launcher are separate cargo crates with separate build
+directories (the kernel's non-PIE linker flags are scoped to `kernel/.cargo` so
+they never leak into the std launcher). Build each from its own directory:
 
 ```sh
-cargo bootimage
-qemu-system-x86_64 \
-  -drive format=raw,file=target/x86_64-unknown-none/debug/bootimage-lionos-kernel.bin \
-  -serial stdio
+# 1) Build the bootable kernel image (output: <repo>/target/x86_64-unknown-none/debug/)
+cd kernel && cargo build && cargo bootimage && cd ..
+
+# 2) Build the `lionos` launcher (host binary)
+cd launcher && cargo build && cd ..
+```
+
+### Via the launcher (recommended)
+
+```sh
+lionos run                 # boot the kernel in a window (serial on stdio)
+lionos run --headless      # no window; marker goes to stdout (CI uses this)
+lionos doctor              # check QEMU is installed; prints install help if not
+lionos update --source <dir-or-http-url>   # checksum-verified disk download
+```
+
+### Direct QEMU (equivalent to `lionos run`)
+
+```sh
+qemu-system-x86_64 -drive format=raw,file=target/x86_64-unknown-none/debug/bootimage-lionos-kernel.bin -serial stdio
 ```
 
 The Week-1 stub prints `LIONOS_INIT_OK` on COM1 then halts. Use `Ctrl+A X` to

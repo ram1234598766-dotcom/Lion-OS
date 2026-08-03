@@ -25,35 +25,113 @@ jobs:
         run: cargo install bootimage --version 0.10.5
 
       - name: Build executable + bootable image
+        working-directory: kernel
         run: cargo build && cargo bootimage
 
       - name: Secret scan (gitleaks, current tree)
         run: |
-          curl -fsSL -o /tmp/g.tgz "https://github.com/gitleaks/gitleaks/releases/download/v8.30.1/gitleaks_8.30.1_linux_x64.tar.gz"
-          tar -xzf /tmp/g.tgz -C /tmp gitleaks && chmod +x /tmp/gitleaks
-          /tmp/gitleaks detect --no-git --no-banner .
+          curl -fsSL -o "$RUNNER_TEMP/g.tgz" "https://github.com/gitleaks/gitleaks/releases/download/v8.30.1/gitleaks_8.30.1_linux_x64.tar.gz"
+          tar -xzf "$RUNNER_TEMP/g.tgz" -C "$RUNNER_TEMP" gitleaks && chmod +x "$RUNNER_TEMP/gitleaks"
+          "$RUNNER_TEMP/gitleaks" detect --no-git --no-banner .
 
       - name: Boot smoke test (positive — expect LIONOS_INIT_OK)
+        working-directory: kernel
         run: |
           set -e
           timeout 45 qemu-system-x86_64 -nographic -no-reboot \
-            -drive format=raw,file=target/x86_64-unknown-none/debug/bootimage-lionos-kernel.bin \
-            -serial file:/tmp/boot-positive.log || true
-          grep -q "LIONOS_INIT_OK" /tmp/boot-positive.log
+            -drive format=raw,file=../target/x86_64-unknown-none/debug/bootimage-lionos-kernel.bin \
+            -serial file:"$RUNNER_TEMP/boot-positive.log" || true
+          grep -q "LIONOS_INIT_OK" "$RUNNER_TEMP/boot-positive.log"
           echo "PASS: LIONOS_INIT_OK observed on serial"
 
       - name: Boot smoke test (negative — must FAIL when marker is wrong)
+        working-directory: kernel
         run: |
           set -e
           # Rebuild the SAME kernel with a deliberately different marker.
           # kernel/build.rs (rerun-if-env-changed) forces the recompile.
           LIONOS_BOOT_MARKER=LIONOS_NEGATIVE cargo bootimage
           timeout 45 qemu-system-x86_64 -nographic -no-reboot \
-            -drive format=raw,file=target/x86_64-unknown-none/debug/bootimage-lionos-kernel.bin \
-            -serial file:/tmp/boot-negative.log || true
-          grep -q "LIONOS_NEGATIVE" /tmp/boot-negative.log        # broken marker DID boot
-          if grep -q "LIONOS_INIT_OK" /tmp/boot-negative.log; then
+            -drive format=raw,file=../target/x86_64-unknown-none/debug/bootimage-lionos-kernel.bin \
+            -serial file:"$RUNNER_TEMP/boot-negative.log" || true
+          grep -q "LIONOS_NEGATIVE" "$RUNNER_TEMP/boot-negative.log"        # broken marker DID boot
+          if grep -q "LIONOS_INIT_OK" "$RUNNER_TEMP/boot-negative.log"; then
             echo "ERROR: original marker still present — negative test broken"
             exit 1
           fi
           echo "PASS: negative boot correctly lacks the checkpoint string"
+
+  launcher-build:
+    name: launcher (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+          - os: macos-13            # Intel
+            target: x86_64-apple-darwin
+          - os: macos-14            # Apple Silicon
+            target: aarch64-apple-darwin
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Build launcher
+        working-directory: launcher
+        run: cargo build --release --target ${{ matrix.target }}
+
+      - name: Run launcher tests
+        working-directory: launcher
+        run: cargo test --target ${{ matrix.target }}
+
+      - name: Upload launcher binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: lionos-${{ matrix.target }}
+          path: launcher/target/${{ matrix.target }}/release/lionos${{ matrix.os == 'windows-latest' && '.exe' || '' }}
+          if-no-files-found: error
+
+  launcher-e2e:
+    name: launcher e2e (boots kernel from artifact)
+    needs: launcher-build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install QEMU
+        run: sudo apt-get update && sudo apt-get install -y qemu-system-x86
+
+      - name: Install pinned nightly + build boot image
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: nightly-2026-08-02
+          components: rust-src, llvm-tools-preview
+          targets: x86_64-unknown-none
+
+      - name: Install bootimage
+        run: cargo install bootimage --version 0.10.5
+
+      - name: Build kernel boot image
+        working-directory: kernel
+        run: cargo build && cargo bootimage
+
+      - name: Download launcher binary (clean CI artifact)
+        uses: actions/download-artifact@v4
+        with:
+          name: lionos-x86_64-unknown-linux-gnu
+          path: /tmp/lionos
+
+      - name: Run end-to-end from the downloaded artifact
+        run: |
+          set -e
+          chmod +x /tmp/lionos/lionos
+          timeout 45 /tmp/lionos/lionos run --headless > /tmp/e2e.log 2>&1 || true
+          grep -q "LIONOS_INIT_OK" /tmp/e2e.log
+          echo "PASS: downloaded lionos binary booted the kernel (marker observed)"

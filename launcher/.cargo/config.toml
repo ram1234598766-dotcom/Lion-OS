@@ -1,3 +1,5 @@
-# The launcher is a normal host (std) binary; override the workspace default.
+# The launcher is a normal host (std) binary; override the kernel workspace's
+# freestanding default target. Kernel linker flags are scoped to
+# kernel/.cargo/config.toml, so none leak here. Build from inside this dir.
 [build]
 target = "x86_64-unknown-linux-gnu"

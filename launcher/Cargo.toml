@@ -2,7 +2,15 @@
 name = "lionos"
 version = "0.1.0"
 edition = "2021"
-description = "LionOS host-side launcher CLI (Week-1 stub; clap + subcommands land in Week 2)"
+description = "LionOS host-side launcher CLI"
 
-# Standalone crate for W1; joined as a workspace member in Month 1 Week 2.
+# Standalone crate; not a member of the kernel workspace (which targets
+# x86_64-unknown-none). Build from this directory so launcher/.cargo/config.toml
+# selects the host target. Revisit workspace membership once the launcher and
+# kernel share a build in a later month.
 [workspace]
+
+[dependencies]
+clap = { version = "4.5", features = ["derive"] }
+hex = "0.4"
+sha2 = "0.10"

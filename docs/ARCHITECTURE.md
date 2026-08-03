@@ -22,8 +22,12 @@ state, faithfully recorded:
 The kernel uses the builtin `x86_64-unknown-none` target, but must be linked
 **non-PIE at 1 MiB** or it cannot boot: the default build emits a
 position-independent ELF (segments at VMA 0) that the bootloader jumps into and
-immediately faults. `.cargo/config.toml` forces `ET_EXEC` via
+immediately faults. `kernel/.cargo/config.toml` forces `ET_EXEC` via
 `-C relocation-model=static` + `-C link-arg=-no-pie` + `kernel/linker.ld`.
+
+The rustflags are scoped to `kernel/` (not the workspace root) because cargo
+concatenates `build.rustflags` across config layers — a deeper file cannot clear
+them, so they would otherwise leak into the std `launcher` crate.
 
 > **Watch note (deferred):** a JSON target spec (`disable-redzone`,
 > `+soft-float`) is wanted for Month 2 (interrupts) but requires

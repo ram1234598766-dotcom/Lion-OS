@@ -1,0 +1,13 @@
+# Kernel build: freestanding target, static relocation (non-PIE), fixed at 1 MiB.
+# Scope this HERE (not at the workspace root) so the linker flags cannot leak
+# into the std `launcher` crate. The linker runs from the workspace root, so the
+# script path is workspace-relative (`kernel/linker.ld`). Build the kernel from
+# inside this directory:
+#   cd kernel && cargo build && cargo bootimage
+[build]
+target = "x86_64-unknown-none"
+rustflags = [
+  "-C", "relocation-model=static",
+  "-C", "link-arg=-Tkernel/linker.ld",
+  "-C", "link-arg=-no-pie",
+]
