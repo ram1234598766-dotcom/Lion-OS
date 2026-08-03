@@ -70,8 +70,6 @@ jobs:
         include:
           - os: ubuntu-latest
             target: x86_64-unknown-linux-gnu
-          - os: macos-13            # Intel
-            target: x86_64-apple-darwin
           - os: macos-14            # Apple Silicon
             target: aarch64-apple-darwin
           - os: windows-latest
@@ -96,6 +94,30 @@ jobs:
         with:
           name: lionos-${{ matrix.target }}
           path: launcher/target/${{ matrix.target }}/release/lionos${{ matrix.os == 'windows-latest' && '.exe' || '' }}
+          if-no-files-found: error
+
+  # Intel-macOS builds are kept as their own job: free-tier macos-13 runners
+  # are heavily contended and can queue for a long time, which would otherwise
+  # block the Linux e2e job below.
+  launcher-build-intel:
+    name: launcher (macos-13 x64)
+    runs-on: macos-13
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-apple-darwin
+      - name: Build launcher
+        working-directory: launcher
+        run: cargo build --release --target x86_64-apple-darwin
+      - name: Run launcher tests
+        working-directory: launcher
+        run: cargo test --target x86_64-apple-darwin
+      - name: Upload launcher binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: lionos-x86_64-apple-darwin
+          path: launcher/target/x86_64-apple-darwin/release/lionos
           if-no-files-found: error
 
   launcher-e2e:
