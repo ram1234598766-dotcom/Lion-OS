@@ -1,0 +1,11 @@
+[workspace]
+resolver = "2"
+members = ["kernel"]
+
+# Kernel (freestanding) aborts on panic. The std launcher keeps its own default
+# and is intentionally NOT a workspace member until Month 1 Week 2.
+[profile.release]
+panic = "abort"
+
+[profile.dev]
+panic = "abort"

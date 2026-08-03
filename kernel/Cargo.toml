@@ -1,0 +1,11 @@
+[package]
+name = "lionos-kernel"
+version = "0.1.0"
+edition = "2021"
+description = "LionOS bare-metal kernel stub (Month 1 / Week 1 placeholder)"
+
+# The bootloader crate builds a bootable disk image around this kernel.
+# 0.9.x is the line compatible with the `bootimage` 0.10.x tool; 0.11+ uses a
+# different builder interface. The custom LionOS bootloader replaces this in M1W3.
+[dev-dependencies]
+bootloader = "0.9.35"

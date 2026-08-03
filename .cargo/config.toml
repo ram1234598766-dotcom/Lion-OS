@@ -1,0 +1,24 @@
+# Default build target for the workspace.
+#
+# `x86_64-unknown-none` compiles for the bare target, but on its own it emits
+# a position-independent ELF (segments at VMA 0) that the bootloader cannot
+# boot. Codegen flags here make it a static, non-PIE `ET_EXEC` fixed at 1 MiB
+# by `kernel/linker.ld`:
+#   - `relocation-model=static`  -> no PIC/PIE codegen
+#   - `-no-pie`                  -> the ELF is `ET_EXEC`, not `ET_DYN`
+#
+# Note: the red zone stays enabled here (the builtin target does not expose a
+# disable flag). It only becomes dangerous when interrupt handlers run
+# (Month 2); at that point switch to a custom target JSON that sets
+# `disable-redzone` + `+soft-float` (a JSON spec needs `-Zjson-target-spec`,
+# which `bootimage` cannot pass, so it is deferred).
+#
+# The std `launcher` crate overrides this with its own config (host target)
+# and is intentionally NOT a workspace member until Month 1 Week 2.
+[build]
+target = "x86_64-unknown-none"
+rustflags = [
+  "-C", "relocation-model=static",
+  "-C", "link-arg=-Tkernel/linker.ld",
+  "-C", "link-arg=-no-pie",
+]

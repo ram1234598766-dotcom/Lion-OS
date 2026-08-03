@@ -1,0 +1,8 @@
+[package]
+name = "lionos"
+version = "0.1.0"
+edition = "2021"
+description = "LionOS host-side launcher CLI (Week-1 stub; clap + subcommands land in Week 2)"
+
+# Standalone crate for W1; joined as a workspace member in Month 1 Week 2.
+[workspace]

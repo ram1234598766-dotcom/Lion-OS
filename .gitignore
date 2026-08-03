@@ -1,34 +1,4 @@
-# Python
-__pycache__/
-*.py[cod]
-*.egg-info/
-*.egg
-.eggs/
-build/
-dist/
-.venv/
-venv/
-env/
-
-# Tooling
-.pytest_cache/
-.coverage
-htmlcov/
-.tox/
-.mypy_cache/
-.ruff_cache/
-
-# OS / editor
+/target
+**/*.rs.bk
 .DS_Store
-Thumbs.db
-.idea/
-.vscode/
-*.swp
-*.swo
-
-# Lion-OS local state
-*.cfg.tmp
-config.json.tmp
-
-# Local tooling
-.deepeval/
+Cargo.lock

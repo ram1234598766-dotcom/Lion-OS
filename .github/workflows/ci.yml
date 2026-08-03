@@ -1,51 +1,59 @@
-name: CI
+name: ci
 
 on:
   push:
-    branches: [main, master]
   pull_request:
-  workflow_dispatch:
 
 jobs:
-  test:
-    name: Tests (Python ${{ matrix.python }})
+  kernel-boot:
+    name: Build + boot smoke test
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        python: ["3.10", "3.11", "3.12", "3.13"]
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: ${{ matrix.python }}
-      - name: Install
-        run: |
-          python -m pip install --upgrade pip
-          python -m pip install -e ".[dev]"
-      - name: Run tests
-        run: |
-          python -m pytest -v
 
-  build:
-    name: Build package
-    needs: test
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - name: Install system deps (QEMU + mtools)
+        run: sudo apt-get update && sudo apt-get install -y qemu-system-x86 mtools
+
+      - name: Install pinned nightly Rust with freestanding target
+        uses: dtolnay/rust-toolchain@stable
         with:
-          python-version: "3.11"
-      - name: Install build
-        run: python -m pip install build
-      - name: Build wheel + sdist
-        run: python -m build
-      - name: Upload artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: lion-os-dist
-          path: dist/
-      - name: Run smoke test on built package
+          toolchain: nightly-2026-08-02
+          components: rust-src, llvm-tools-preview
+          targets: x86_64-unknown-none
+
+      - name: Install bootimage tool
+        run: cargo install bootimage --version 0.10.5
+
+      - name: Build executable + bootable image
+        run: cargo build && cargo bootimage
+
+      - name: Secret scan (gitleaks, current tree)
         run: |
-          python -m pip install dist/*.whl
-          python -m lionos --headless
+          curl -fsSL -o /tmp/g.tgz "https://github.com/gitleaks/gitleaks/releases/download/v8.30.1/gitleaks_8.30.1_linux_x64.tar.gz"
+          tar -xzf /tmp/g.tgz -C /tmp gitleaks && chmod +x /tmp/gitleaks
+          /tmp/gitleaks detect --no-git --no-banner .
+
+      - name: Boot smoke test (positive — expect LIONOS_INIT_OK)
+        run: |
+          set -e
+          timeout 45 qemu-system-x86_64 -nographic -no-reboot \
+            -drive format=raw,file=target/x86_64-unknown-none/debug/bootimage-lionos-kernel.bin \
+            -serial file:/tmp/boot-positive.log || true
+          grep -q "LIONOS_INIT_OK" /tmp/boot-positive.log
+          echo "PASS: LIONOS_INIT_OK observed on serial"
+
+      - name: Boot smoke test (negative — must FAIL when marker is wrong)
+        run: |
+          set -e
+          # Rebuild the SAME kernel with a deliberately different marker.
+          # kernel/build.rs (rerun-if-env-changed) forces the recompile.
+          LIONOS_BOOT_MARKER=LIONOS_NEGATIVE cargo bootimage
+          timeout 45 qemu-system-x86_64 -nographic -no-reboot \
+            -drive format=raw,file=target/x86_64-unknown-none/debug/bootimage-lionos-kernel.bin \
+            -serial file:/tmp/boot-negative.log || true
+          grep -q "LIONOS_NEGATIVE" /tmp/boot-negative.log        # broken marker DID boot
+          if grep -q "LIONOS_INIT_OK" /tmp/boot-negative.log; then
+            echo "ERROR: original marker still present — negative test broken"
+            exit 1
+          fi
+          echo "PASS: negative boot correctly lacks the checkpoint string"
