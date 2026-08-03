@@ -50,9 +50,13 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
+      # Image name is NOT `lionos`: a manual docker push earlier created the
+      # user-scoped package `.../lion-os/lionos`, and the workflow's
+      # repo-scoped GITHUB_TOKEN cannot write to a user-owned package (403, and
+      # a private user package cannot be made public via the REST API).
       - name: Compute lowercase GHCR image name
         id: image
-        run: echo "name=ghcr.io/$(echo '${{ github.repository }}' | tr '[:upper:]' '[:lower:]')/lionos" >> "$GITHUB_OUTPUT"
+        run: echo "name=ghcr.io/$(echo '${{ github.repository }}' | tr '[:upper:]' '[:lower:]')/lion" >> "$GITHUB_OUTPUT"
 
       - name: Build and push container image
         uses: docker/build-push-action@v6
