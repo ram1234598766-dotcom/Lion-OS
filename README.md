@@ -17,7 +17,8 @@ week and each week's deliverables must meet its "Done when" criterion.
   - `doctor` detects QEMU and prints per-OS install help                  — **done**
   - `run --headless` boots the kernel end-to-end                          — **done**
   - `update` SHA-256-verifies downloads; corrupted ones are refused       — **done**
-  - CI cross-platform matrix (macOS/Windows/Linux) + launcher e2e         — **in progress**
+  - CI matrix (Linux/Windows/macOS-arm64) + Linux e2e boots via artifact   — **done**
+  - macOS Intel Apple runner pending GitHub runner availability            — infra
 
 The old Python desktop-OS release line (v1.0.0-v2.0.7) was removed from this
 repo to begin the from-scratch kernel; its history is preserved in this repo's
