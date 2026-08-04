@@ -13,6 +13,7 @@
 #[cfg(test)]
 extern crate std;
 
+pub mod ffi;
 pub mod framebuffer;
 pub mod memory;
 pub mod serial;

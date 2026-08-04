@@ -44,4 +44,16 @@ SECTIONS
         *(.bss)
         *(.bss.*)
     }
+
+    /* The C/asm objects (`c/support.c`, `asm/cpu.s`) emit these extra
+     * sections; drop them so they can never become orphan LOAD segments that
+     * break the page-aligned program-header layout the bootloader maps. */
+    /DISCARD/ : {
+        *(.comment)
+        *(.note.GNU-stack)
+        *(.note.gnu.property)
+        *(.eh_frame)
+        *(.eh_frame_hdr)
+        *(.gcc_except_table)
+    }
 }

@@ -37,6 +37,28 @@ the reference QEMU run: `CR3=0x1000`, and `0x100000` (virtual) → `0x401000`
 The kernel is identity-mapped at its link address; the bootloader places it at
 ~`0x401000` physical and maps it 1:1.
 
+### Mixed-language (C + assembly) support *(M1 refinement)*
+
+Beyond the Rust core, a small guarded slice of low-level support is written in
+freestanding C (`kernel/c/support.c`) and assembly (`kernel/asm/cpu.s`) — the
+classic kernel boilerplate (memset/memcpy/memcmp, hlt/cli/sti/pause/read_cr3/
+cpuid). `kernel/build.rs` compiles both into a static lib with
+`-ffreestanding -fno-builtin -fno-stack-protector -mno-red-zone -mcmodel=kernel
+-fno-pie -nostdlib -nostdinc`, kept to the freestanding `x86_64-unknown-none`
+target only, and links it into the kernel ELF. The Rust side declares them in
+`kernel/src/ffi.rs` and calls them through safe wrappers.
+
+`_start` exercises the bridge at boot and prints a diagnostic line
+(`[ffi] cr3=… cpuid=… memset=… memcpy_ok=… vendor=…`); CI greps the
+deterministic `memset=abababababababab` / `memcpy_ok=1` values so a silent
+regression in the C/asm objects fails loudly instead of weeks later.
+
+> **Watch note (M1 refinement, fixed):** the first `cpuid` stub triple-faulted.
+> `CPUID` overwrites `EDX`, but SysV had parked the `out` pointer in `%rdx`; the
+> `mov %eax,(%rdx)` then wrote through the clobbered `EDX` (≈ the CPUID feature
+> bits) → `#PF` → double/triple fault. Fix: stage the `out` base in `%r8`
+> (which `CPUID` does **not** clobber) before executing.
+
 ### Build flags that matter
 
 The kernel uses the builtin `x86_64-unknown-none` target, but must be linked

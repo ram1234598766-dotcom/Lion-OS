@@ -48,7 +48,12 @@ jobs:
           grep -q "LIONOS_HANDOFF_OK" "$RUNNER_TEMP/boot-positive.log"   # BootInfo consumed + validated
           grep -q "LIONOS_MEM_MAP regions=" "$RUNNER_TEMP/boot-positive.log" # memory-map summary printed
           grep -q "LIONOS_INIT_OK" "$RUNNER_TEMP/boot-positive.log"      # Week-1 checkpoint preserved
-          echo "PASS: handoff (validated memory map) + LIONOS_INIT_OK observed on serial"
+          # C + assembly integration is exercised at boot and must be healthy.
+          # The memset/memcpy_ok values are deterministic for any x86-64 VM.
+          grep -q "\[ffi\]" "$RUNNER_TEMP/boot-positive.log"
+          grep -q "memset=abababababababab" "$RUNNER_TEMP/boot-positive.log"
+          grep -q "memcpy_ok=1" "$RUNNER_TEMP/boot-positive.log"
+          echo "PASS: handoff (validated memory map) + LIONOS_INIT_OK + C/asm FFI observed on serial"
 
       - name: Boot smoke test (negative — must FAIL when marker is wrong)
         working-directory: kernel
