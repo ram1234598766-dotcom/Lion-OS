@@ -3,9 +3,15 @@ resolver = "2"
 members = ["kernel"]
 
 # Kernel (freestanding) aborts on panic. The std launcher keeps its own default
-# and is intentionally NOT a workspace member until Month 1 Week 2.
+# and is intentionally NOT a workspace member.
 [profile.release]
 panic = "abort"
 
 [profile.dev]
 panic = "abort"
+
+# Host-side unit tests (kernel/lib, run via `cargo test --target x86_64-unknown-linux-gnu`)
+# need the default unwind strategy so a failing assertion fails one test instead of
+# taking down the whole harness. The freestanding bin target keeps panic=abort.
+[profile.test]
+panic = "unwind"

@@ -1,11 +1,18 @@
 # Kernel build: freestanding target, static relocation (non-PIE), fixed at 1 MiB.
-# Scope this HERE (not at the workspace root) so the linker flags cannot leak
-# into the std `launcher` crate. The linker runs from the workspace root, so the
-# script path is workspace-relative (`kernel/linker.ld`). Build the kernel from
-# inside this directory:
+#
+# The linker flags are scoped to the freestanding TARGET only (not `[build]`,
+# which would apply to every target built from this directory): `cargo test
+# --target x86_64-unknown-linux-gnu` can then link host test binaries without
+# the kernel linker script. They still cannot leak into the std `launcher`
+# crate because this file lives under `kernel/`, and cargo concatenates
+# `build.rustflags` across config layers (a deeper file cannot clear them).
+#
+# Build the kernel from inside this directory:
 #   cd kernel && cargo build && cargo bootimage
 [build]
 target = "x86_64-unknown-none"
+
+[target.x86_64-unknown-none]
 rustflags = [
   "-C", "relocation-model=static",
   "-C", "link-arg=-Tkernel/linker.ld",

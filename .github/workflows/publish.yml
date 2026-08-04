@@ -3,14 +3,16 @@ name: publish
 # Publishes LionOS as a container package to GHCR. Publishing through a
 # workflow (with the `ghcr.io/<repo>/...` namespace + `packages: write`) is what
 # links the package to this repository and makes it public — a manual docker
-# push creates an unlinked, private, user-scoped package. Run manually, or it
-# runs automatically whenever kernel/packaging changes land on main.
+# push creates an unlinked, private, user-scoped package. Runs automatically
+# whenever kernel/packaging changes land on main, or when a `v*` release tag is
+# pushed (which also tags the image `v0.x.0` per the Monthly Release Ritual).
 
 on:
   workflow_dispatch:
   push:
     branches: [main]
     paths: [kernel/**, packaging/**]
+    tags: ["v*"]
 
 jobs:
   publish:
@@ -64,7 +66,20 @@ jobs:
           context: /tmp/lionos-ctx
           file: packaging/Dockerfile
           push: true
+          # `latest` + `sha` always; the version tag (e.g. v0.1.0) only on a
+          # release-tag push, so `docker pull ghcr.io/<owner>/lion-os/lion:v0.x.0`
+          # is a real, pinned artifact.
           tags: |
             ${{ steps.image.outputs.name }}:latest
             ${{ steps.image.outputs.name }}:${{ github.sha }}
+            ${{ startsWith(github.ref, 'refs/tags/') && format('{0}:{1}', steps.image.outputs.name, github.ref_name) || '' }}
+          # OCI labels populate the GHCR package page (description/license/source)
+          # — part of the Monthly Release Ritual.
+          labels: |
+            org.opencontainers.image.title=LionOS
+            org.opencontainers.image.description=LionOS bootable kernel image for QEMU (Rust, x86_64)
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.version=${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || 'latest' }}
+            org.opencontainers.image.licenses=MIT
           platforms: linux/amd64

@@ -1,0 +1,29 @@
+[package]
+name = "lionos-fuzz"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[package.metadata]
+cargo-fuzz = true
+
+# Standalone crate (own [workspace]) so `cargo fuzz` builds against the host
+# toolchain + libFuzzer, independent of the kernel workspace's freestanding
+# target. Targets the kernel's pure parsers in `kernel/src/{memory,framebuffer}.rs`.
+[workspace]
+
+[dependencies]
+libfuzzer-sys = "0.4"
+lionos-kernel = { path = "../kernel" }
+
+[[bin]]
+name = "fuzz_memory"
+path = "fuzz_targets/fuzz_memory.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "fuzz_framebuffer"
+path = "fuzz_targets/fuzz_framebuffer.rs"
+test = false
+doc = false

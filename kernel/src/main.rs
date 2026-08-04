@@ -1,18 +1,22 @@
 #![no_std]
 #![no_main]
 
-//! LionOS kernel stub — Month 1 / Week 1 placeholder.
+//! LionOS kernel boot entry point — Month 1 / Week 3.
 //!
-//! This is intentionally minimal: it initialises the COM1 serial port and
-//! prints a single marker string, then halts. It exists to prove the whole
-//! toolchain (nightly rustc, `x86_64-unknown-none`, bootloader crate, QEMU,
-//! CI serial capture) end-to-end. Month 1 Week 3 replaces this stub with the
-//! real bootloader -> kernel handoff (memory map, paging, long-mode entry).
+//! The bootloader crate (our boot provider) enters long mode, sets up initial
+//! paging, reads the BIOS/UEFI memory map, and hands a `BootInfo` to `_start`.
+//! We re-validate that memory map (defense in depth — see `memory.rs`) and print
+//! a summary over serial before parking the CPU. The Week-1 placeholder marker
+//! `LIONOS_INIT_OK` is preserved (CI greps for it); `LIONOS_HANDOFF_OK` appears
+//! only once the handoff is consumed and validated.
 
 use core::arch::asm;
 use core::panic::PanicInfo;
 
-mod serial;
+use bootloader::bootinfo::{BootInfo, MemoryRegionType};
+
+use lionos_kernel::memory::{self, Region, RegionKind};
+use lionos_kernel::serial;
 
 /// Boot marker printed to COM1 on success. CI greps for this exact string.
 ///
@@ -22,14 +26,73 @@ fn boot_marker() -> &'static str {
     option_env!("LIONOS_BOOT_MARKER").unwrap_or("LIONOS_INIT_OK")
 }
 
-/// Entry point called by the bootloader.
+/// Map a bootloader `MemoryRegionType` onto our validator's coarser `RegionKind`.
+fn to_kind(t: MemoryRegionType) -> RegionKind {
+    use MemoryRegionType::*;
+    match t {
+        Usable => RegionKind::Usable,
+        Reserved | InUse | Kernel | KernelStack | PageTable | Bootloader | FrameZero
+        | BootInfo | Package | Empty => RegionKind::Reserved,
+        AcpiReclaimable | AcpiNvs | BadMemory | NonExhaustive => RegionKind::NonUsable,
+    }
+}
+
+/// Entry point called by the bootloader with a validated `BootInfo` in RDI.
 #[no_mangle]
-pub extern "C" fn _start() -> ! {
+pub extern "C" fn _start(boot_info: &'static BootInfo) -> ! {
     serial::init();
+
+    // Adapt the bootloader's frame-number regions into the raw triples our
+    // validator consumes. The map is capacity-capped by the bootloader crate
+    // (64), so a stack array is safe — no heap needed yet.
+    let mut raw = [(0u64, 0u64, RegionKind::Usable); memory::MAX_REGIONS];
+    let mut n = 0;
+    for region in boot_info.memory_map.iter() {
+        raw[n] = (
+            region.range.start_frame_number,
+            region.range.end_frame_number,
+            to_kind(region.region_type),
+        );
+        n += 1;
+    }
+
+    let mut regions = [Region::empty(); memory::MAX_REGIONS];
+    match memory::validate_regions(&raw[..n], &mut regions) {
+        Ok(count) => {
+            let usable = regions[..count]
+                .iter()
+                .filter(|r| r.kind == RegionKind::Usable)
+                .count();
+            serial::write_str("LIONOS_MEM_MAP regions=");
+            serial::write_dec(count as u64);
+            serial::write_str(" usable=");
+            serial::write_dec(usable as u64);
+            serial::write_str("\r\n");
+
+            // Print the first few usable regions so CI/`xxd`-style debugging
+            // can eyeball the addresses without needing `core::fmt`.
+            for r in regions[..count].iter().filter(|r| r.kind == RegionKind::Usable).take(4) {
+                serial::write_str("  usable 0x");
+                serial::write_hex(r.start);
+                serial::write_str(" len=");
+                serial::write_dec(r.len);
+                serial::write_str("\r\n");
+            }
+
+            serial::write_raw(b"LIONOS_HANDOFF_OK\r\n");
+        }
+        Err(e) => {
+            serial::write_raw(b"LIONOS_MEM_MAP_ERROR code=");
+            serial::write_dec(e.code());
+            serial::write_str("\r\n");
+        }
+    }
+
+    // Week-1 CI checkpoint preserved regardless of the handoff result.
     serial::write_raw(boot_marker().as_bytes());
-    serial::write_byte(b'\r');
-    serial::write_byte(b'\n');
-    // Boot success. Park the CPU (the real kernel brings up interrupts later).
+    serial::write_raw(b"\r\n");
+
+    // Boot success. Park the CPU (the real kernel brings up interrupts in M2).
     loop {
         // SAFETY: hlt is always safe; interrupts are disabled at this point.
         unsafe { asm!("hlt", options(nomem, nostack, preserves_flags)) }

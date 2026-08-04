@@ -51,3 +51,38 @@ pub fn write_raw(bytes: &[u8]) {
         write_byte(byte);
     }
 }
+
+/// Write a `&str` raw.
+pub fn write_str(s: &str) {
+    write_raw(s.as_bytes());
+}
+
+const HEX: &[u8; 16] = b"0123456789abcdef";
+
+/// Write `value` as fixed-width lowercase hex (no `0x` prefix).
+///
+/// Keep this on raw `outb`/`write_byte` rather than `core::fmt`: the Week-1
+/// stub triple-faulted when it called `core::fmt` at boot (see
+/// `docs/ARCHITECTURE.md` §1 watch-note); the raw port path is proven safe.
+pub fn write_hex(value: u64) {
+    for shift in (0..64).step_by(4).rev() {
+        write_byte(HEX[((value >> shift) & 0xF) as usize]);
+    }
+}
+
+/// Write `value` as decimal.
+pub fn write_dec(value: u64) {
+    if value == 0 {
+        write_byte(b'0');
+        return;
+    }
+    let mut buf = [0u8; 20];
+    let mut n = value;
+    let mut i = buf.len();
+    while n > 0 {
+        i -= 1;
+        buf[i] = b'0' + (n % 10) as u8;
+        n /= 10;
+    }
+    write_raw(&buf[i..]);
+}

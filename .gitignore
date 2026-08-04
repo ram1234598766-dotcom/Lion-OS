@@ -2,3 +2,7 @@
 **/*.rs.bk
 .DS_Store
 Cargo.lock
+
+# libFuzzer artifacts (regenerated on each run)
+fuzz/corpus/
+fuzz/artifacts/

@@ -104,20 +104,32 @@ ls -l /dev/kvm              # exists => KVM available (nested virtualization ena
 
 - **KVM available** (`/dev/kvm` present, host BIOS + `.wslconfig` nested virt on):
 
+  KVM access is gated by group membership on the WSL side. One-time setup:
+
+  ```sh
+  sudo usermod -aG kvm "$USER"      # then log out / back in (or `newgrp kvm`)
+  ```
+
   ```sh
   qemu-system-x86_64 -enable-kvm -machine accel=kvm ...   # fast
   ```
 
-- **KVM unavailable** → pure software emulation (slow but correct):
+- **KVM unavailable** (no `/dev/kvm`, or "Permission denied" from the `kvm`
+  group) → pure software emulation (slow but correct):
 
   ```sh
   qemu-system-x86_64 -machine accel=tcg ...               # fallback, always boots
   ```
 
+  The `lionos` launcher uses `-machine accel=tcg` by default and boots fine
+  either way; KVM only makes it faster.
+
 > **Watch out for:** enabling KVM inside WSL2 requires BOTH the host UEFI
 > setting ("nested virtualization"/VT-x inside) AND in
 > `C:\Users\<you>\.wslconfig`: `[wsl2]` + `nestedVirtualization=true`.
-> Missing either silently disables KVM. Use `-accel tcg` as the portable
+> Missing either silently disables KVM. **Even then**, `Permission denied` on
+> `/dev/kvm` means your user is not in the `kvm` group (check `id`). Add it with
+> the `usermod` line above and re-login. Use `-accel tcg` as the portable
 > fallback and do not hard-depend on KVM.
 
 ## 4. CI

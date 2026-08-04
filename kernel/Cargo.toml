@@ -2,10 +2,30 @@
 name = "lionos-kernel"
 version = "0.1.0"
 edition = "2021"
-description = "LionOS bare-metal kernel stub (Month 1 / Week 1 placeholder)"
+description = "LionOS bare-metal x86_64 kernel (Month 1)"
 
-# The bootloader crate builds a bootable disk image around this kernel.
-# 0.9.x is the line compatible with the `bootimage` 0.10.x tool; 0.11+ uses a
-# different builder interface. The custom LionOS bootloader replaces this in M1W3.
-[dev-dependencies]
+# The bootloader crate is our boot provider: it sets up initial paging, enters
+# long mode, reads the BIOS/UEFI memory map, and hands a validated `BootInfo` to
+# the kernel's `_start`. 0.9.x is the line compatible with the `bootimage`
+# 0.10.x tool (0.11+ uses a different builder interface).
+#
+# NOTE: keep the DEFAULT features here. The kernel and the bootloader built into
+# the image must agree on the `BootInfo` layout; enabling `map_physical_memory`
+# / `recursive_page_table` here silently desynchronised the two builds (the
+# kernel dereferenced a BootInfo of the wrong size -> page fault -> silent reset
+# before any serial output). Revisit in Month 2, when the memory manager is
+# actually built, with a layout both sides control.
+[dependencies]
 bootloader = "0.9.35"
+
+# Library + binary split so the kernel's pure parsers (memory-map/framebuffer
+# validation) can be unit-tested on the host and fuzzed with cargo-fuzz. The bin
+# is excluded from `cargo test` (it is `#![no_main]` and needs no harness).
+[lib]
+name = "lionos_kernel"
+path = "src/lib.rs"
+
+[[bin]]
+name = "lionos-kernel"
+path = "src/main.rs"
+test = false

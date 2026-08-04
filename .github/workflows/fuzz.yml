@@ -1,0 +1,36 @@
+name: fuzz
+
+# Bounded fuzz smoke runs for the kernel's pure parsers (memory-map +
+# framebuffer validation). Kept as its own workflow so regular pushes don't pay
+# the cargo-fuzz install + clang build cost; run manually or on main.
+#
+# `-runs=NNN` bounds each target so a "clean" run is deterministic and fast. The
+# real fuzzing happens in refinement weeks with longer `-max_total_time` runs.
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths: [kernel/**, fuzz/**]
+
+jobs:
+  fuzz-smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install pinned nightly Rust + tools
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: nightly-2026-08-02
+          components: rust-src, llvm-tools-preview
+          targets: x86_64-unknown-none
+
+      - name: Install cargo-fuzz
+        run: cargo install cargo-fuzz --locked
+
+      - name: Fuzz memory-map parser (bounded)
+        run: cargo fuzz run fuzz_memory -- -runs=200000
+
+      - name: Fuzz framebuffer validator (bounded)
+        run: cargo fuzz run fuzz_framebuffer -- -runs=200000
