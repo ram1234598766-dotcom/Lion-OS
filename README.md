@@ -1368,7 +1368,7 @@ Parse logic lives in modules that are pure (host-testable); I/O lives in
 
 - [The Rust `async`/embedded Reference](https://doc.rust-lang.org/) — freestanding `no_std`
 - [blog_os](https://os.phil-opp.com/) — classic OS-dev reference
-- [QEMU docs](https://www.qemu.org/docs/) — machine/device options
+- [QEMU docs](https://www.qemu.org/docs/master/) — machine/device options
 
 ### Books
 
