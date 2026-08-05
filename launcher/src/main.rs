@@ -24,11 +24,9 @@ struct Cli {
 enum Command {
     /// Boot the kernel in QEMU.
     Run {
-        /// Path to the bootable disk image.
-        #[arg(
-            long,
-            default_value = "target/x86_64-unknown-none/debug/bootimage-lionos-kernel.bin"
-        )]
+        /// Path to the bootable disk image (bootloader 0.11 image built by the
+        /// `os/` crate and copied to the repo-root `target/bios.img`).
+        #[arg(long, default_value = "target/bios.img")]
         kernel: PathBuf,
         /// Headless run (no window) — for CI and scripted use.
         #[arg(long)]

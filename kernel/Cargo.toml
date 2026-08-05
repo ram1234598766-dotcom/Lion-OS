@@ -4,19 +4,15 @@ version = "0.1.0"
 edition = "2021"
 description = "LionOS bare-metal x86_64 kernel (Month 1)"
 
-# The bootloader crate is our boot provider: it sets up initial paging, enters
-# long mode, reads the BIOS/UEFI memory map, and hands a validated `BootInfo` to
-# the kernel's `_start`. 0.9.x is the line compatible with the `bootimage`
-# 0.10.x tool (0.11+ uses a different builder interface).
-#
-# NOTE: keep the DEFAULT features here. The kernel and the bootloader built into
-# the image must agree on the `BootInfo` layout; enabling `map_physical_memory`
-# / `recursive_page_table` here silently desynchronised the two builds (the
-# kernel dereferenced a BootInfo of the wrong size -> page fault -> silent reset
-# before any serial output). Revisit in Month 2, when the memory manager is
-# actually built, with a layout both sides control.
+# The kernel depends on `bootloader_api` (the 0.11 kernel-side contract:
+# `BootInfo`, `entry_point!`, `MemoryRegion`). The `bootloader` crate
+# (DiskImageBuilder) is NOT a kernel dependency anymore — it is a
+# build-dependency of the `os/` image-builder crate, which wraps this crate's
+# `lionos-kernel` bin into a BIOS disk image (`../os/build.rs`). The kernel and
+# the bootloader no longer share a `BootInfo` layout at compile time; 0.11
+# serializes the `BootloaderConfig` into the kernel ELF instead.
 [dependencies]
-bootloader = "0.9.35"
+bootloader_api = "0.11.17"
 
 # Library + binary split so the kernel's pure parsers (memory-map/framebuffer
 # validation) can be unit-tested on the host and fuzzed with cargo-fuzz. The bin

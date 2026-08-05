@@ -1,9 +1,22 @@
 # Default build target for the workspace (the freestanding kernel).
 #
-# Kernel-specific codegen/link flags (non-PIE at 1 MiB) live in
-# kernel/.cargo/config.toml so they never leak into the std `launcher` crate
-# (cargo concatenates `rustflags` across config layers, so a closer file cannot
-# clear them — the kernel must scope its own). Build the kernel from inside
-# `kernel/` (or set RUSTFLAGS); build the launcher from inside `launcher/`.
+# Kernel codegen/link flags are scoped HERE at the workspace root because the
+# kernel is also built as a build artifact by `os/` (bootloader 0.11 disk-image
+# builder). Cargo discovers config from the invocation directory upward, so a
+# `kernel/.cargo/config.toml` would never be seen when `os/` builds the kernel
+# artifact — rustflags would be silently dropped and the kernel would link PIE
+# at VMA 0 (won't boot). Scoping under `[target.x86_64-unknown-none]` keeps the
+# flags off every host build (launcher, fuzz, os).
 [build]
 target = "x86_64-unknown-none"
+
+# The linker script is passed via an ABSOLUTE path emitted by kernel/build.rs
+# (cargo:rustc-link-arg=-T<abs>): a relative `-Tkernel/linker.ld` here would
+# resolve against the linker's cwd, which is NOT the repo root when `os/`
+# builds the kernel as a build artifact (it is os/target/...). `-no-pie` stays
+# here — it is cwd-independent.
+[target.x86_64-unknown-none]
+rustflags = [
+  "-C", "relocation-model=static",
+  "-C", "link-arg=-no-pie",
+]

@@ -30,17 +30,14 @@ jobs:
           components: rust-src, llvm-tools-preview
           targets: x86_64-unknown-none
 
-      - name: Install bootimage
-        run: cargo install bootimage --version 0.10.5
-
-      - name: Build kernel boot image
-        working-directory: kernel
-        run: cargo build && cargo bootimage
+      - name: Build kernel boot image (bootloader 0.11 DiskImageBuilder)
+        working-directory: os
+        run: cargo build
 
       - name: Stage a minimal build context
         run: |
           mkdir -p /tmp/lionos-ctx
-          cp target/x86_64-unknown-none/debug/bootimage-lionos-kernel.bin /tmp/lionos-ctx/bootimage-lionos-kernel.bin
+          cp target/bios.img /tmp/lionos-ctx/bios.img
 
       - name: Log in to GHCR
         uses: docker/login-action@v3

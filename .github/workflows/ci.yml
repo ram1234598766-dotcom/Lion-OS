@@ -21,12 +21,17 @@ jobs:
           components: rust-src, llvm-tools-preview
           targets: x86_64-unknown-none
 
-      - name: Install bootimage tool
-        run: cargo install bootimage --version 0.10.5
-
-      - name: Build executable + bootable image
+      # bootimage is gone in the bootloader 0.11 era: the bootable image is
+      # produced by the `os/` crate (bootloader 0.11 DiskImageBuilder), which
+      # consumes the kernel bin as a build artifact. First build compiles the
+      # BIOS stage crates, so a fresh runner needs network here.
+      - name: Build kernel ELF
         working-directory: kernel
-        run: cargo build && cargo bootimage
+        run: cargo build
+
+      - name: Build bootable disk image (bootloader 0.11)
+        working-directory: os
+        run: cargo build
 
       - name: Run kernel unit tests (host target — pure parsers)
         working-directory: kernel
@@ -38,32 +43,43 @@ jobs:
           tar -xzf "$RUNNER_TEMP/g.tgz" -C "$RUNNER_TEMP" gitleaks && chmod +x "$RUNNER_TEMP/gitleaks"
           "$RUNNER_TEMP/gitleaks" detect --no-git --no-banner .
 
-      - name: Boot smoke test (positive — expect handoff + LIONOS_INIT_OK)
+      - name: Boot smoke test (positive — handoff + framebuffer + fmt + LIONOS_INIT_OK)
         working-directory: kernel
         run: |
           set -e
-          timeout 45 qemu-system-x86_64 -nographic -no-reboot \
-            -drive format=raw,file=../target/x86_64-unknown-none/debug/bootimage-lionos-kernel.bin \
+          # -vga std guarantees a VGA framebuffer even under -nographic, so the
+          # framebuffer handoff is exercised (else LIONOS_FB_NONE).
+          timeout 45 qemu-system-x86_64 -nographic -no-reboot -vga std \
+            -drive format=raw,file=../target/bios.img \
             -serial file:"$RUNNER_TEMP/boot-positive.log" || true
-          grep -q "LIONOS_HANDOFF_OK" "$RUNNER_TEMP/boot-positive.log"   # BootInfo consumed + validated
+          grep -q "LIONOS_HANDOFF_OK" "$RUNNER_TEMP/boot-positive.log"    # BootInfo consumed + validated
           grep -q "LIONOS_MEM_MAP regions=" "$RUNNER_TEMP/boot-positive.log" # memory-map summary printed
-          grep -q "LIONOS_INIT_OK" "$RUNNER_TEMP/boot-positive.log"      # Week-1 checkpoint preserved
+          grep -q "LIONOS_FB_OK" "$RUNNER_TEMP/boot-positive.log"         # framebuffer handoff (bootloader 0.11)
+          grep -q "LIONOS_FMT_OK" "$RUNNER_TEMP/boot-positive.log"        # core::fmt via serial (re-enabled)
+          grep -q "LIONOS_INIT_OK" "$RUNNER_TEMP/boot-positive.log"       # Week-1 checkpoint preserved
           # C + assembly integration is exercised at boot and must be healthy.
-          # The memset/memcpy_ok values are deterministic for any x86-64 VM.
+          # Rust->C framebuffer drawing, C->asm CPUID, Rust->asm (msr/rflags/spinlock).
           grep -q "\[ffi\]" "$RUNNER_TEMP/boot-positive.log"
           grep -q "memset=abababababababab" "$RUNNER_TEMP/boot-positive.log"
           grep -q "memcpy_ok=1" "$RUNNER_TEMP/boot-positive.log"
-          echo "PASS: handoff (validated memory map) + LIONOS_INIT_OK + C/asm FFI observed on serial"
+          grep -q "LIONOS_FB_DRAW_OK" "$RUNNER_TEMP/boot-positive.log"    # C framebuffer drawing ran
+          grep -q "LIONOS_CPUID_LEAF1EDX=" "$RUNNER_TEMP/boot-positive.log" # C->asm (cpuid)
+          grep -q "LIONOS_ASM rflags=" "$RUNNER_TEMP/boot-positive.log"   # Rust->asm (rflags/msr/spinlock)
+          grep -q "spin=1" "$RUNNER_TEMP/boot-positive.log"
+          echo "PASS: handoff + framebuffer + fmt + LIONOS_INIT_OK + full C/asm stack observed on serial"
 
       - name: Boot smoke test (negative — must FAIL when marker is wrong)
         working-directory: kernel
         run: |
           set -e
           # Rebuild the SAME kernel with a deliberately different marker.
-          # kernel/build.rs (rerun-if-env-changed) forces the recompile.
-          LIONOS_BOOT_MARKER=LIONOS_NEGATIVE cargo bootimage
-          timeout 45 qemu-system-x86_64 -nographic -no-reboot \
-            -drive format=raw,file=../target/x86_64-unknown-none/debug/bootimage-lionos-kernel.bin \
+          # kernel/build.rs (rerun-if-env-changed) forces the recompile. The
+          # marker must be set on BOTH builds: `os/` rebuilds the kernel as its
+          # own build artifact (separate cargo invocation, separate cache).
+          LIONOS_BOOT_MARKER=LIONOS_NEGATIVE cargo build
+          (cd ../os && LIONOS_BOOT_MARKER=LIONOS_NEGATIVE cargo build)
+          timeout 45 qemu-system-x86_64 -nographic -no-reboot -vga std \
+            -drive format=raw,file=../target/bios.img \
             -serial file:"$RUNNER_TEMP/boot-negative.log" || true
           grep -q "LIONOS_NEGATIVE" "$RUNNER_TEMP/boot-negative.log"        # broken marker DID boot
           if grep -q "LIONOS_INIT_OK" "$RUNNER_TEMP/boot-negative.log"; then
@@ -148,12 +164,9 @@ jobs:
           components: rust-src, llvm-tools-preview
           targets: x86_64-unknown-none
 
-      - name: Install bootimage
-        run: cargo install bootimage --version 0.10.5
-
-      - name: Build kernel boot image
-        working-directory: kernel
-        run: cargo build && cargo bootimage
+      - name: Build kernel boot image (bootloader 0.11)
+        working-directory: os
+        run: cargo build
 
       - name: Download launcher binary (clean CI artifact)
         uses: actions/download-artifact@v4

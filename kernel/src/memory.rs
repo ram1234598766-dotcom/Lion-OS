@@ -1,11 +1,16 @@
 //! Physical memory-map validation.
 //!
-//! The bootloader hands the kernel a `BootInfo.memory_map` that it has already
+//! The bootloader hands the kernel a `BootInfo` memory map that it has already
 //! sorted and de-duplicated, but this module treats it as **untrusted input**
 //! (defense in depth — see the Month-1 plan's malformed-input rule) and
 //! re-validates it with pure, `no_std`, host-testable functions. `_start` in
-//! `main.rs` adapts the bootloader's frame-number regions into the raw triples
-//! this parser consumes; the same functions back the `cargo-fuzz` target.
+//! `main.rs` adapts the bootloader's regions into the raw triples this parser
+//! consumes; the same functions back the `cargo-fuzz` target.
+//!
+//! bootloader 0.11 hands **byte-address** regions (`MemoryRegion { start, end,
+//! kind }`), so `_start` uses [`validate_regions_bytes`]. The older frame-based
+//! [`validate_regions`] is kept for the fuzz/host-test path that models the
+//! 0.9.35 frame-number shape.
 
 /// Physical memory region kind (a subset of the bootloader's `MemoryRegionType`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -18,8 +23,8 @@ pub enum RegionKind {
     NonUsable,
 }
 
-/// A validated physical memory region in **bytes** (the bootloader passes
-/// 4 KiB frame numbers; we convert and validate).
+/// A validated physical memory region in **bytes** (bootloader 0.11 passes byte
+/// addresses directly; the 0.9.35 frame-based path converted frame numbers).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Region {
     pub start: u64,
@@ -130,6 +135,46 @@ pub fn validate_regions(
     Ok(count)
 }
 
+/// Validate a memory map given as `(start, end, kind)` triples in **bytes** —
+/// the bootloader 0.11 `MemoryRegion` shape. Identical checks to
+/// [`validate_regions`] but inputs are already byte addresses, so there is no
+/// frame→byte conversion (and no `EndOverflow` possible: `start < end` and
+/// `end <= u64::MAX` make `end - start` overflow-free).
+pub fn validate_regions_bytes(
+    input: &[(u64, u64, RegionKind)],
+    out: &mut [Region],
+) -> Result<usize, MapError> {
+    if input.len() > MAX_REGIONS || out.len() < input.len() {
+        return Err(MapError::TooManyRegions);
+    }
+
+    for (i, &(start, end, kind)) in input.iter().enumerate() {
+        if start >= end {
+            return Err(MapError::ZeroLength);
+        }
+        out[i] = Region { start, len: end - start, kind };
+    }
+
+    let count = input.len();
+    let regions = &mut out[..count];
+    regions.sort_unstable_by(|a, b| a.start.cmp(&b.start));
+
+    // Sorted by start, so region j overlaps region i (i < j) exactly when j's
+    // start falls before i's end. Check only USABLE pairs.
+    for i in 0..count {
+        if regions[i].kind != RegionKind::Usable {
+            continue;
+        }
+        for j in (i + 1)..count {
+            if regions[j].kind == RegionKind::Usable && regions[j].start < regions[i].end() {
+                return Err(MapError::Overlap);
+            }
+        }
+    }
+
+    Ok(count)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -211,5 +256,36 @@ mod tests {
         assert_eq!(out[1].start, 30 * FRAME_SIZE);
         assert_eq!(out[2].start, 50 * FRAME_SIZE);
         assert_eq!(out[0].len, 10 * FRAME_SIZE);
+    }
+
+    // --- validate_regions_bytes (bootloader 0.11 byte-address shape) ---
+
+    fn run_bytes(input: &[(u64, u64, RegionKind)]) -> Result<usize, MapError> {
+        let mut out = [Region::empty(); BUFFER_CAP];
+        validate_regions_bytes(input, &mut out)
+    }
+
+    #[test]
+    fn bytes_regions_use_addresses_directly() {
+        let mut out = [Region::empty(); BUFFER_CAP];
+        let n = validate_regions_bytes(&[usable(0x1000, 0x5000)], &mut out).unwrap();
+        assert_eq!(n, 1);
+        assert_eq!(out[0], Region { start: 0x1000, len: 0x4000, kind: RegionKind::Usable });
+    }
+
+    #[test]
+    fn bytes_zero_length_rejected() {
+        assert_eq!(run_bytes(&[usable(0x1000, 0x1000)]), Err(MapError::ZeroLength));
+    }
+
+    #[test]
+    fn bytes_overlap_rejected() {
+        assert_eq!(run_bytes(&[usable(0x1000, 0x2000), usable(0x1800, 0x2800)]),
+                   Err(MapError::Overlap));
+    }
+
+    #[test]
+    fn bytes_touching_is_ok() {
+        assert_eq!(run_bytes(&[usable(0x1000, 0x2000), usable(0x2000, 0x3000)]), Ok(2));
     }
 }

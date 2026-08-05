@@ -1,0 +1,8 @@
+# os/ is a normal host (std) crate; it overrides the root workspace's
+# freestanding default. The kernel artifact is built separately for
+# x86_64-unknown-none by the artifact dependency.
+[build]
+target = "x86_64-unknown-linux-gnu"
+
+[unstable]
+bindeps = true

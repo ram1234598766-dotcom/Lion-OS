@@ -64,8 +64,9 @@
 
 LionOS is a real operating-system kernel and bootloader being written **from
 scratch** for x86_64, primarily in Rust, with a guarded slice of freestanding
-C and assembly for low-level support. It boots inside QEMU via the upstream
-`bootloader` crate and a `bootimage`-built image. It is **not** a desktop
+C (`kernel/c/`) and assembly (`kernel/asm/`) for low-level support. It boots
+inside QEMU via the upstream `bootloader` 0.11.17 crate wrapped into a disk
+image by the `os/` builder crate. It is **not** a desktop
 application and **not yet** something you install on real hardware.
 
 ### Why This Project
@@ -171,9 +172,11 @@ unit-tested, and fuzzed.
 
 ### In Progress
 
-- [ ] Framebuffer (GOP) handoff — parser contract scaffolded, wire-in deferred
+- [x] Framebuffer (GOP) handoff — **shipped** (bootloader 0.11.17)
   - [x] `kernel/src/framebuffer.rs` validator (pure, tested, fuzzed)
-  - [ ] bootloader 0.10/0.11 upgrade to deliver the descriptor at boot
+  - [x] bootloader 0.9.35 → 0.11.17 upgrade; `LIONOS_FB_OK` at boot
+  - [x] C framebuffer drawing layer (`kernel/c/fb.c`) — `LIONOS_FB_DRAW_OK`
+  - [x] `core::fmt` (`writeln!`) via `Serial` — `LIONOS_FMT_OK`
 
 ### Planned
 
@@ -284,9 +287,10 @@ lion-os/
 |--------|-------------|
 | `kernel/` | Freestanding x86_64 kernel. Rust core + freestanding C (`c/`) + assembly (`asm/`). |
 | `kernel/src/` | Kernel source: entry, FFI bridge, serial, memory/framebuffer validators. |
-| `kernel/c/` | Freestanding C utilities (`support.c`) — memset/memcpy/memcmp. |
-| `kernel/asm/` | GAS assembly CPU stubs (`cpu.s`). |
-| `bootloader/` | Boot-provider configuration (upstream `bootloader` + `bootimage`). |
+| `kernel/c/` | Freestanding C (`support.c`, `fb.c`) — memory ops, C→asm CPUID, framebuffer drawing. |
+| `kernel/asm/` | GAS assembly CPU stubs (`cpu.s`) — hlt/cli/sti, cr3, cpuid, msr, port I/O, spinlock. |
+| `os/` | Disk-image builder (bootloader 0.11 `BiosBoot`) → `target/bios.img`. |
+| `bootloader/` | Boot-provider notes (upstream `bootloader` 0.11.17 + `bootloader_api`). |
 | `launcher/` | Cross-platform `lionos` CLI: boot, doctor, update. |
 | `docs/` | `ARCHITECTURE.md`, `DEV_SETUP.md`, `SYSCALLS.md`. |
 | `fuzz/` | `cargo-fuzz` targets for the kernel parsers. |
@@ -316,7 +320,7 @@ lion-os/
 | Tool | Min Version | Recommended | Purpose |
 |------|-------------|-------------|---------|
 | Rust nightly (`rustup`) | nightly-2026-08-02 | latest nightly | Compile the kernel (`no_std`) |
-| Cargo (`bootimage` 0.10.5 + `bootloader` 0.9.35) | — | pinned | Build the bootable image |
+| Cargo (`bootloader` 0.11.17 + `bootloader_api`) | — | pinned | Build the bootable image (`os/`) |
 | `rust-src` / `llvm-tools-preview` components | — | present | Freestanding target build |
 | QEMU (`qemu-system-x86_64`) | 6.x | 10.x | Boot/test the kernel |
 | A C compiler + `ar` (`cc` / `gcc` / `clang`) | 11+ | 15+ | Compile `kernel/c` + `kernel/asm` |
@@ -364,7 +368,6 @@ See `docs/DEV_SETUP.md` for the authoritative walkthrough.
 rustup toolchain install nightly-2026-08-02
 rustup component add rust-src llvm-tools-preview --toolchain nightly-2026-08-02
 rustup target add x86_64-unknown-none --toolchain nightly-2026-08-02
-cargo install bootimage --version 0.10.5
 sudo apt install -y qemu-system-x86 gcc binutils
 ```
 
@@ -405,8 +408,8 @@ automatically:
 #### Verify Setup
 
 ```bash
-cd kernel && cargo build && cargo bootimage
-timeout 20 qemu-system-x86_64 -accel tcg -drive format=raw,file=target/x86_64-unknown-none/debug/bootimage-lionos-kernel.bin -nographic
+cd kernel && cargo build && cd ../os && cargo build
+timeout 20 qemu-system-x86_64 -accel tcg -drive format=raw,file=target/bios.img -nographic
 ```
 
 Expected output:
@@ -463,7 +466,7 @@ docker run --rm ghcr.io/ram1234598766-dotcom/lion-os/lion:v0.1.0
 git clone https://github.com/ram1234598766-dotcom/Lion-OS.git
 cd Lion-OS
 # follow Environment Setup, then:
-cd kernel && cargo build && cargo bootimage && cd ..
+cd kernel && cargo build && cd ../os && cargo build && cd ..
 cd launcher && cargo build
 ./launcher/target/debug/lionos run --headless
 ```
@@ -482,11 +485,11 @@ cd launcher && cargo build
 ### Quick Build
 
 ```bash
-cd kernel && cargo build && cargo bootimage
+cd kernel && cargo build && cd ../os && cargo build
 ```
 
 Produces the bootable image at
-`target/x86_64-unknown-none/debug/bootimage-lionos-kernel.bin`.
+`target/bios.img`.
 
 ### Full Build
 
@@ -502,7 +505,7 @@ cargo fuzz build                     # fuzz harnesses (in fuzz/)
 | Command | Description |
 |---------|-------------|
 | `cargo build` (in `kernel/`) | Build the kernel object (freestanding). |
-| `cargo bootimage` (in `kernel/`) | Produce the bootable `.bin` image. |
+| `cd ../os && cargo build` (in `kernel/`) | Produce the bootable `.bin` image. |
 | `cargo test --target x86_64-unknown-linux-gnu` (in `kernel/`) | Run pure-parser unit tests on the host. |
 | `cargo build` (in `launcher/`) | Build the `lionos` CLI. |
 | `cargo fuzz run fuzz_memory` (in `fuzz/`) | Fuzz the memory-map parser. |
@@ -522,24 +525,24 @@ cargo fuzz build                     # fuzz harnesses (in fuzz/)
 #### Configuration 1 — Debug (default)
 
 ```bash
-cd kernel && cargo build && cargo bootimage
+cd kernel && cargo build && cd ../os && cargo build
 ```
 
 #### Configuration 2 — Boot marker override (CI negative test)
 
 ```bash
-LIONOS_BOOT_MARKER=LIONOS_NEGATIVE cargo bootimage
+LIONOS_BOOT_MARKER=LIONOS_NEGATIVE cargo build && (cd ../os && LIONOS_BOOT_MARKER=LIONOS_NEGATIVE cargo build)
 ```
 
 ### Build Output
 
 Plain ELF: `target/x86_64-unknown-none/debug/lionos-kernel`
-Bootable image: `target/x86_64-unknown-none/debug/bootimage-lionos-kernel.bin`
+Bootable image: `target/bios.img`
 
 | Output File | Description |
 |-------------|-------------|
 | `lionos-kernel` | The freestanding kernel ELF (linked at 1 MiB, non-PIE). |
-| `bootimage-lionos-kernel.bin` | The BIOS-bootable disk image (kernel + bootloader). |
+| `bios.img` | The BIOS-bootable disk image (kernel + bootloader). |
 
 ### Clean Build
 
@@ -563,14 +566,14 @@ The canonical command is `lionos run` (or the manual QEMU command below).
 
 | Flag / Option | Description |
 |---------------|-------------|
-| `--kernel PATH` | Path to the bootable image (default `target/…/bootimage-lionos-kernel.bin`). |
+| `--kernel PATH` | Path to the bootable image (default `target/…/bios.img`). |
 | `--headless` | No window; route serial to stdout (CI/scripts). |
 
 ### Method 2 — Manual QEMU
 
 ```bash
 timeout 45 qemu-system-x86_64 -accel tcg \
-  -drive format=raw,file=target/x86_64-unknown-none/debug/bootimage-lionos-kernel.bin \
+  -drive format=raw,file=target/bios.img \
   -nographic
 ```
 
@@ -628,7 +631,7 @@ boot code.
 ```bash
 # Terminal 1 — QEMU, paused, gdb stub on tcp:1234
 qemu-system-x86_64 -s -S -accel tcg \
-  -drive format=raw,file=target/x86_64-unknown-none/debug/bootimage-lionos-kernel.bin \
+  -drive format=raw,file=target/bios.img \
   -nographic
 ```
 
@@ -656,7 +659,7 @@ gdb target/x86_64-unknown-none/debug/lionos-kernel
 ```bash
 # Stop on the first fault and log exceptions
 qemu-system-x86_64 -accel tcg -no-reboot -d int,cpu_reset -D /tmp/q.log \
-  -drive format=raw,file=target/x86_64-unknown-none/debug/bootimage-lionos-kernel.bin \
+  -drive format=raw,file=target/bios.img \
   -nographic
 grep -aE "check_exception|v=" /tmp/q.log
 ```
@@ -862,9 +865,9 @@ Firmware (SeaBIOS) → bootloader crate → long mode + paging → `_start(BootI
 
 ### Stage 1 — Firmware (SeaBIOS / BIOS)
 
-BIOS loads the disk image produced by `bootimage`. (UEFI/OVMF is not yet in the
-boot path; UEFI arrives with the bootloader upgrade that also brings the GOP
-framebuffer.)
+BIOS loads the disk image produced by the `os/` builder (bootloader 0.11.17
+`BiosBoot`). (UEFI/OVMF is not yet in the boot path; UEFI via `UefiBoot` is a
+later-month addition — the framebuffer handoff already ships on the BIOS path.)
 
 #### Responsibilities
 
@@ -874,7 +877,7 @@ framebuffer.)
 
 - BIOS path only today; no UEFI, no SecureBoot, no framebuffer handoff yet.
 
-### Stage 2 — Bootloader crate (v0.9.35)
+### Stage 2 — Bootloader crate (v0.11.17)
 
 Reads the BIOS memory map, sets up initial 4-level page tables, enters long
 mode, provides a stack, and hands a structured `BootInfo` to the kernel.
@@ -1164,7 +1167,7 @@ measure today is fuzz throughput / parser robustness:
 
 | # | Issue | Severity | Status | Workaround |
 |---|-------|----------|--------|------------|
-| 1 | Framebuffer (GOP) handoff not wired (bootloader 0.9.35 field absent) | Medium | Open | Scaffold validator; upgrade bootloader at M2/M3 |
+| 1 | Framebuffer (GOP) handoff not wired (bootloader 0.11.17 field absent) | Medium | Open | Scaffold validator; upgrade bootloader at M2/M3 |
 | 2 | `core::fmt` at boot historically triple-faulted | High (historical) | Fixed | Raw port printing (`serial.rs`) |
 | 3 | `macos-13` Intel CI runners can queue long | Low | Open | Intel job kept separate; consider dropping Intel |
 | 4 | No heap / alloc / interrupts yet | By design | — | Planned Month 2 |
@@ -1249,8 +1252,8 @@ No. Bare-metal boot is a planned milestone, not current reality.
 
 #### What toolchain makes the bootable image?
 
-`bootimage` 0.10.5 + the `bootloader` 0.9.35 crate against an `x86_64-unknown-none`
-Target with a non-PIE link at 1 MiB.
+The `bootloader` 0.11.17 crate (`BiosBoot::new(&kernel).create_disk_image`)
+against an `x86_64-unknown-none` target with a non-PIE link at 1 MiB.
 
 #### Why is there C and assembly in a Rust kernel?
 
@@ -1377,7 +1380,7 @@ Parse logic lives in modules that are pure (host-testable); I/O lives in
 
 ### Tutorials & Articles
 
-- [`bootloader` crate + `bootimage`](https://github.com/rust-osdev/bootloader)
+- [`bootloader` crate (0.11 DiskImageBuilder)](https://github.com/rust-osdev/bootloader)
 - [cargo-fuzz](https://github.com/rust-fuzz/cargo-fuzz) — parser fuzzing
 
 ---
@@ -1544,7 +1547,7 @@ Copyright (c) 2026 Mrityunjay
 
 | Component | License | Link |
 |-----------|---------|------|
-| `bootloader` crate + `bootimage` | MIT/Apache-2.0 | [rust-osdev/bootloader](https://github.com/rust-osdev/bootloader) |
+| `bootloader` crate (+ `bootloader_api`) | MIT/Apache-2.0 | [rust-osdev/bootloader](https://github.com/rust-osdev/bootloader) |
 | Rust toolchain (`rustc`) | MIT/Apache-2.0 | [rust-lang/rust](https://github.com/rust-lang/rust) |
 
 ---
@@ -1558,7 +1561,7 @@ Copyright (c) 2026 Mrityunjay
 
 ### Projects
 
-- `bootloader` / `bootimage` — the boot provider.
+- `bootloader` (0.11 DiskImageBuilder) + `bootloader_api` — the boot provider.
 - `cargo-fuzz` — parser fuzzing.
 
 ### Communities

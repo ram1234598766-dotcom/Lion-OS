@@ -72,11 +72,22 @@ fn main() {
         return;
     }
 
+    // The non-PIE linker script must be passed by ABSOLUTE path: when `os/`
+    // builds this crate as a build artifact, the linker's cwd is under
+    // `os/target/...`, so a relative `-Tkernel/linker.ld` would not resolve.
+    // `CARGO_MANIFEST_DIR` is always this package's directory.
+    let linker_script = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("linker.ld");
+    println!("cargo:rustc-link-arg=-T{}", linker_script.display());
+
     let cc = std::env::var("CC").unwrap_or_else(|_| "cc".to_string());
     let out = PathBuf::from(std::env::var_os("OUT_DIR").expect("OUT_DIR"));
 
     let mut objects = Vec::new();
-    for (name, src) in [("support", "c/support.c"), ("cpu", "asm/cpu.s")] {
+    for (name, src) in [
+        ("support", "c/support.c"),
+        ("fb", "c/fb.c"),
+        ("cpu", "asm/cpu.s"),
+    ] {
         let obj = out.join(format!("{name}.o"));
         compile(&cc, src, &obj);
         objects.push(obj);

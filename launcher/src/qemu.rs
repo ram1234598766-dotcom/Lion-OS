@@ -58,7 +58,7 @@ pub fn run(kernel: &Path, headless: bool) -> std::io::Result<ExitStatus> {
 
     if !kernel.is_file() {
         return Err(std::io::Error::other(format!(
-            "kernel image not found at {} — build it with `cargo bootimage` in the repo root",
+            "kernel image not found at {} — build it with `cd kernel && cargo build && cd ../os && cargo build` from the repo root",
             kernel.display()
         )));
     }

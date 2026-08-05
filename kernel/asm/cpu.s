@@ -71,5 +71,72 @@ lion_cpuid:
     ret
 .size lion_cpuid,.-lion_cpuid
 
+# uint64_t lion_read_msr(uint32_t msr) — reads a model-specific register.
+#   SysV: edi = MSR number. rdmsr reads ecx into edx:eax; combine into RAX.
+#   rdmsr clobbers ecx/edx/eax, all caller-saved — safe for a leaf wrapper.
+.global lion_read_msr
+.type lion_read_msr,@function
+lion_read_msr:
+    movl  %edi, %ecx
+    rdmsr                   # edx:eax = MSR[ecx]
+    shlq  $32, %rdx
+    orq   %rdx, %rax        # edx:eax -> rax (u64)
+    ret
+.size lion_read_msr,.-lion_read_msr
+
+# void lion_write_msr(uint32_t msr, uint64_t value)
+#   SysV: edi = msr, rsi = value. wrmsr takes ecx=msr, edx:eax=value.
+.global lion_write_msr
+.type lion_write_msr,@function
+lion_write_msr:
+    movl  %edi, %ecx
+    movq  %rsi, %rax        # low 32 bits
+    shrq  $32, %rsi
+    movl  %esi, %edx        # high 32 bits
+    wrmsr
+    ret
+.size lion_write_msr,.-lion_write_msr
+
+# uint64_t lion_read_rflags(void) — snapshot of RFLAGS (e.g. IF bit 9).
+.global lion_read_rflags
+.type lion_read_rflags,@function
+lion_read_rflags:
+    pushfq
+    popq  %rax
+    ret
+.size lion_read_rflags,.-lion_read_rflags
+
+# uint8_t lion_inb(uint16_t port) — read one byte from an I/O port.
+.global lion_inb
+.type lion_inb,@function
+lion_inb:
+    movw  %di, %dx
+    inb   %dx, %al
+    ret
+.size lion_inb,.-lion_inb
+
+# void lion_outb(uint16_t port, uint8_t value) — write one byte to an I/O port.
+.global lion_outb
+.type lion_outb,@function
+lion_outb:
+    movw  %di, %dx
+    movb  %sil, %al
+    outb  %al, %dx
+    ret
+.size lion_outb,.-lion_outb
+
+# uint8_t lion_xchg8(uint8_t *ptr, uint8_t value) — atomic byte exchange.
+#   Returns the previous value. Spinlock acquire: prev = xchg8(&lock, 1);
+#   the lock is held iff prev == 0. `xchg` with a memory operand is implicitly
+#   locked on x86; the explicit `lock` is documentation.
+.global lion_xchg8
+.type lion_xchg8,@function
+lion_xchg8:
+    movb  %sil, %al
+    lock xchgb %al, (%rdi)  # al <-> *rdi; al now holds the old value
+    movzbl %al, %eax
+    ret
+.size lion_xchg8,.-lion_xchg8
+
 # Mark the objects as having a non-executable stack (GNU_STACK PT_GNU_STACK).
 .section .note.GNU-stack,"",@progbits

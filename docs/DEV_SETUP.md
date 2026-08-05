@@ -11,7 +11,7 @@ environment: **Kali Linux on WSL2** (also works on any Debian/Ubuntu host).
 ```sh
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal
 rustup default nightly
-rustup component add rust-src llvm-tools-preview    # rust-src for future build-std; llvm-tools for bootimage
+rustup component add rust-src llvm-tools-preview    # rust-src + llvm-tools for bootloader 0.11 stage builds
 rustup target add x86_64-unknown-none
 ```
 
@@ -32,12 +32,12 @@ once the real bootloader (UEFI) is running — Month 1 Week 3. Until then the
 ### 1.3 Boot-image tooling
 
 ```sh
-cargo install bootimage --version 0.10.5
 ```
 
-`bootimage` wraps the kernel ELF into a bootable disk image powered by the
-`bootloader` crate. The two are tightly versioned: use `bootloader` **0.9.x**
-(a dev-dependency of the kernel) with `bootimage` **0.10.x**.
+The `os/` builder crate wraps the kernel ELF (a build **artifact** dependency,
+`CARGO_BIN_FILE_LIONOS_KERNEL_lionos-kernel`) into a bootable disk image via
+the `bootloader` crate's **0.11.17** `BiosBoot` DiskImageBuilder (a
+build-dependency of `os/`). The image lands at the repo-root `target/bios.img`.
 
 ### 1.4 Secret scanning (Day 2)
 
@@ -61,7 +61,7 @@ they never leak into the std launcher). Build each from its own directory:
 
 ```sh
 # 1) Build the bootable kernel image (output: <repo>/target/x86_64-unknown-none/debug/)
-cd kernel && cargo build && cargo bootimage && cd ..
+cd kernel && cargo build && cd ../os && cargo build && cd ..
 
 # 2) Build the `lionos` launcher (host binary)
 cd launcher && cargo build && cd ..
@@ -79,7 +79,7 @@ lionos update --source <dir-or-http-url>   # checksum-verified disk download
 ### Direct QEMU (equivalent to `lionos run`)
 
 ```sh
-qemu-system-x86_64 -drive format=raw,file=target/x86_64-unknown-none/debug/bootimage-lionos-kernel.bin -serial stdio
+qemu-system-x86_64 -drive format=raw,file=target/bios.img -serial stdio
 ```
 
 The Week-1 stub prints `LIONOS_INIT_OK` on COM1 then halts. Use `Ctrl+A X` to
@@ -90,7 +90,7 @@ exit QEMU, or run headless with `-nographic`.
 Compile-time marker, overridable via an env var:
 
 ```sh
-LIONOS_BOOT_MARKER=LIONOS_NEGATIVE cargo bootimage
+LIONOS_BOOT_MARKER=LIONOS_NEGATIVE cargo build && (cd ../os && LIONOS_BOOT_MARKER=LIONOS_NEGATIVE cargo build)
 ```
 
 ## 3. Virtualization: KVM vs TCG in WSL2
@@ -144,18 +144,26 @@ when it should.
 
 - **Kernel builds but silently resets / double-faults at boot.** The kernel
   must be linked **non-PIE at 1 MiB**. `x86_64-unknown-none` alone emits a
-  position-independent ELF (segments at VMA 0); the `.cargo/config.toml` flags
-  (`relocation-model=static`, `-no-pie`, `kernel/linker.ld`) are mandatory.
-  Verify with `readelf -h` that the kernel ELF is `Type: EXEC`, entry ≈ `0x10xxxx`.
-- **`cargo bootimage` fails with "wrong format / no `package.metadata.bootloader`".**
-  The `bootloader` crate 0.11+ is incompatible with `bootimage` 0.10.x. Keep
-  `bootloader = "0.9.35"` (dev-dependency) until the custom bootloader replaces
-  it in M1W3.
-- **`writeln!`/`core::fmt` from the kernel triple-faults.** Known issue in the
-  Week-1 stub (see `ARCHITECTURE.md` §1). Prefer raw `outb` output for now;
-  `core::fmt` returns with the Month-3 serial driver.
+  position-independent ELF (segments at VMA 0); the root `.cargo/config.toml`
+  flags (`relocation-model=static`, `-no-pie`) plus the linker script (passed
+  by absolute path from `kernel/build.rs`) are mandatory.
+  Verify with `readelf -h` that the kernel ELF is `Type: EXEC`, entry ≈ `0x10xxxx`,
+  and that `.bootloader-config` survives (the 0.11 loader panics without it).
+- **`cd ../os && cargo build` fails with "no matching package named `kernel`".**
+  The artifact-dependency key in `os/Cargo.toml` must be the kernel **package
+  name**: `lionos-kernel = { path = "../kernel", artifact = "bin", ... }`. Its
+  build.rs env var is `CARGO_BIN_FILE_LIONOS_KERNEL_lionos-kernel`. (The old
+  reason to stay on 0.9.35 — "0.11 is incompatible with `bootimage`" — is moot:
+  `bootimage` is removed; 0.11.17 ships the image through `BiosBoot`.)
+- **`writeln!`/`core::fmt` from the kernel triple-faults.** Fixed by the
+  bootloader 0.11.17 upgrade: `kernel/src/serial.rs` implements
+  `core::fmt::Write` (`Serial`) and boot prints `LIONOS_FMT_OK`. The Week-1
+  double-fault does not reproduce under the 0.11 loader.
 - **`-nographic` plus `-serial stdio` errors out** ("cannot use stdio by
   multiple character devices"). With `-nographic`, serial is already stdio; use
   one or the other. For scripted checks prefer `-serial file:<path>`.
 - **Changing `LIONOS_BOOT_MARKER` doesn't rebuild.** `kernel/build.rs` declares
   `rerun-if-env-changed` so the negative CI test recompiles; don't remove it.
+  The env var must be set on BOTH the `kernel` and `os/` cargo invocations —
+  the image is assembled from `os/`'s own artifact build of the kernel, a
+  separate cargo process with a separate cache.

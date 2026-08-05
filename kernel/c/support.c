@@ -40,3 +40,15 @@ int lion_memcmp(const void *a, const void *b, size_t n) {
     }
     return 0;
 }
+
+/* C calling assembly — the Rust -> C -> asm chain. `lion_cpuid` is the asm
+ * routine in asm/cpu.s (SysV: leaf in edi, subleaf in esi, out[] in rdx). This
+ * demonstrates the C half of the mixed-language stack and returns the CPUID
+ * leaf-1 feature bits (edx), which the kernel prints at boot and CI greps. */
+extern void lion_cpuid(unsigned int, unsigned int, unsigned int *);
+
+unsigned int lion_cpu_leaf1_edx(void) {
+    unsigned int out[4];
+    lion_cpuid(1u, 0u, out);
+    return out[3];
+}

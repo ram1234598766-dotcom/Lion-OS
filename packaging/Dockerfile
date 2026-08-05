@@ -7,7 +7,7 @@
 #   docker run --rm ghcr.io/ram1234598766-dotcom/lion-os
 #
 # The boot image is a build artifact (not committed); rebuild it before
-# building this image with:  (cd kernel && cargo build && cargo bootimage)
+# building this image with:  cd kernel && cargo build && cd ../os && cargo build
 
 FROM debian:bookworm-slim
 
@@ -15,8 +15,9 @@ RUN apt-get update \
     && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends qemu-system-x86 \
     && rm -rf /var/lib/apt/lists/*
 
-# The prebuilt, checksummed bootable disk image (bootloader crate + kernel).
-COPY bootimage-lionos-kernel.bin /opt/lionos/bootimage-lionos-kernel.bin
+# The prebuilt, checksummed bootable disk image (bootloader 0.11 + kernel).
+# -vga std guarantees the framebuffer handoff is exercised (LIONOS_FB_OK).
+COPY bios.img /opt/lionos/bios.img
 
 ENTRYPOINT ["qemu-system-x86_64", "-nographic", "-machine", "accel=tcg", "-no-reboot", \
-    "-drive", "format=raw,file=/opt/lionos/bootimage-lionos-kernel.bin"]
+    "-vga", "std", "-drive", "format=raw,file=/opt/lionos/bios.img"]
