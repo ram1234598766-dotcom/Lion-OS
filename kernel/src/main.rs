@@ -148,6 +148,10 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
     // `framebuffer` is an FFI-safe `Optional<FrameBuffer>`. `buffer().as_ptr()`
     // is the mapped VIRTUAL base (page-aligned; the physical address is not
     // exposed by the API). `validate` only checks page alignment + overflow, so
+    // --- Framebuffer handoff (bootloader 0.11) ---
+    // `framebuffer` is an FFI-safe `Optional<FrameBuffer>`. `buffer().as_ptr()`
+    // is the mapped VIRTUAL base (page-aligned; the physical address is not
+    // exposed by the API). `validate` only checks page alignment + overflow, so
     // the page-aligned virtual base is the correct input.
     match boot_info.framebuffer.as_mut() {
         Some(fb) => {
@@ -274,6 +278,9 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
     serial::write_raw(b"\r\n");
 
     // --- Month 2: interrupt bring-up (GDT → IDT → PIC → PIT → sti) ---
+    // (Page-table takeover is deferred: bootloader 0.11's virtual↔physical
+    // mapping isn't derivable, so CR3 for a fresh PML4 can't be computed. See
+    // paging.rs.)
     interrupts::init();
     serial::write_str("LIONOS_IRQ_FLAGS=");
     serial::write_hex(ffi::read_rflags()); // expect IF=1 → bit 9 set (…202)

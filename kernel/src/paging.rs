@@ -80,6 +80,19 @@ pub fn entry_page(frame: u64, present: bool, writable: bool, user: bool) -> u64 
     e
 }
 
+/// Encode a 2 MiB huge-page leaf entry (PS bit set). `addr` must be 2 MiB
+/// aligned.
+pub fn entry_huge(addr: u64, present: bool, writable: bool) -> u64 {
+    let mut e = addr & ADDR_MASK;
+    if present {
+        e |= PRESENT;
+    }
+    if writable {
+        e |= WRITABLE;
+    }
+    e | (1 << 7) // page-size bit
+}
+
 /// Return the present + writable bits of an entry (the subset we generally set).
 pub fn flags_of(entry: u64) -> u16 {
     (entry & (PRESENT | WRITABLE | USER)) as u16
@@ -143,6 +156,12 @@ pub unsafe fn probe(virt: u64) -> u64 {
     *(pt_addr as *const u64).add(index1(virt))
 }
 
+// NOTE: the `takeover` (owning page tables) is DEFERRED. Bootloader 0.11 does
+// not expose its virtual↔physical mapping, so the *physical* address of a fresh
+// PML4 (what CR3 needs) cannot be derived from the arena's virtual address —
+// `mov cr3, <&arena>` faults. The index/entry helpers below are the tested
+// building blocks for the eventual takeover.
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -191,6 +210,26 @@ mod tests {
         let e = entry_page(frame, true, true, false);
         assert_eq!(e & ADDR_MASK, frame);
         assert_eq!(flags_of(e), (PRESENT | WRITABLE) as u16);
+    }
+
+    #[test]
+    fn huge_entry_sets_ps_bit_and_masks() {
+        let addr: u64 = 0x0000_fd00_0000; // 2 MiB aligned
+        let e = entry_huge(addr, true, true);
+        assert_eq!(e & ADDR_MASK, addr);
+        assert!(e & (1 << 7) != 0, "PS bit must be set");
+        assert!(e & PRESENT != 0 && e & WRITABLE != 0);
+    }
+
+    #[test]
+    fn huge_entry_masks_to_page_alignment() {
+        // entry_huge masks to ADDR_MASK (4 KiB granularity); the *caller*
+        // (takeover) aligns to 2 MiB before calling. Verify the low 4 KiB are
+        // dropped and present/write/PS bits survive.
+        let addr: u64 = 0x0000_fd02_0000;
+        let e = entry_huge(addr, true, true);
+        assert_eq!(e & 0xFFF, 0x3 | (1 << 7)); // present + rw + PS
+        assert_eq!(e & 0xFFFFF000, addr & 0xFFFFF000);
     }
 
     }

@@ -215,9 +215,9 @@ pub static KERNEL_ALLOC: KernelAlloc = KernelAlloc(KernelHeap::empty());
 
 /// Heap capacity. `ponytail: a `static` in `.bss` — the kernel image (incl.
 /// bss) must not reach bootloader 0.11's page-table allocation zone, so this
-/// stays modest until the frame allocator carves a real heap from free
-/// physical frames and maps it. 64 KiB keeps the whole image clear of the
-/// bootloader's structures even with the frame allocator's code in the image.
+/// stays modest. Growing the heap from frames requires owning the page tables
+/// (the `paging` takeover), which is blocked by the bootloader's non-derivable
+/// virtual↔physical mapping for CR3 — a documented follow-up.
 #[cfg(target_os = "none")]
 pub const HEAP_SIZE: usize = 64 * 1024;
 
