@@ -13,6 +13,11 @@
 #![feature(abi_x86_interrupt)]
 #![allow(unused_features)]
 
+// The kernel heap (Month 2): `Vec`/`Box`/`String` from the `alloc` crate. The
+// `#[global_allocator]` in `heap.rs` provides the backing store on the kernel
+// target; the host test build links `std` (which supplies its own allocator).
+extern crate alloc;
+
 // Make `std` available to the unit-test build (the test harness links it), but
 // leave the kernel itself freestanding.
 #[cfg(test)]
@@ -21,6 +26,7 @@ extern crate std;
 pub mod ffi;
 pub mod framebuffer;
 pub mod gdt;
+pub mod heap;
 pub mod idt;
 pub mod interrupts;
 pub mod memory;

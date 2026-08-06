@@ -11,6 +11,8 @@
 //! Week-1 placeholder marker `LIONOS_INIT_OK` is preserved (CI greps for it);
 //! `LIONOS_HANDOFF_OK` appears only once the handoff is consumed and validated.
 
+extern crate alloc;
+
 use core::fmt::Write;
 use core::panic::PanicInfo;
 
@@ -18,8 +20,12 @@ use bootloader_api::entry_point;
 use bootloader_api::info::MemoryRegionKind;
 use bootloader_api::BootInfo;
 
+use alloc::boxed::Box;
+use alloc::vec::Vec;
+
 use lionos_kernel::ffi;
 use lionos_kernel::framebuffer::{self, FramebufferInfo};
+use lionos_kernel::heap;
 use lionos_kernel::interrupts;
 use lionos_kernel::memory::{self, Region, RegionKind};
 use lionos_kernel::serial;
@@ -245,6 +251,29 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
 
     serial::write_str("LIONOS_KBD_ARMED count=");
     serial::write_dec(interrupts::key_count());
+    serial::write_str("\r\n");
+
+    // --- Month 2: kernel heap via `#[global_allocator]` ---
+    // SAFETY: single-CPU boot, called exactly once before any allocation.
+    unsafe { heap::init_heap(); }
+
+    // Exercise the heap so a regression fails loudly at boot: a growing `Vec`
+    // (needs alloc+realloc) and a `Box` (needs alloc on the heap, not the stack).
+    let mut nums = Vec::new();
+    for i in 0..64 {
+        nums.push(i * 3);
+    }
+    let sum: u32 = nums.iter().sum();
+    let boxed = Box::new(0xA5u8);
+
+    serial::write_str("LIONOS_HEAP_OK cap=");
+    serial::write_dec(heap::KERNEL_ALLOC.capacity() as u64);
+    serial::write_str(" used=");
+    serial::write_dec(heap::KERNEL_ALLOC.used() as u64);
+    serial::write_str(" sum=");
+    serial::write_dec(sum as u64);
+    serial::write_str(" box=");
+    serial::write_hex(u64::from(*boxed));
     serial::write_str("\r\n");
 
     // Drain any deferred work the ISRs queued, then park with interrupts on so

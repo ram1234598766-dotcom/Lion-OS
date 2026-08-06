@@ -70,7 +70,11 @@ jobs:
           grep -q "LIONOS_IRQ_FLAGS=" "$RUNNER_TEMP/boot-positive.log"    # sti executed (interrupt flag set)
           grep -q "LIONOS_TIMER_TICKS=" "$RUNNER_TEMP/boot-positive.log"  # PIT timer ISR incremented ticks
           grep -q "LIONOS_IRQ_OK" "$RUNNER_TEMP/boot-positive.log"        # M2 bring-up + deferred drain complete
-          echo "PASS: handoff + framebuffer + fmt + LIONOS_INIT_OK + full C/asm stack + M2 IRQ bring-up observed on serial"
+          # Month 2 heap: #[global_allocator] live, Vec/Box exercised at boot.
+          grep -q "LIONOS_HEAP_OK cap=" "$RUNNER_TEMP/boot-positive.log"  # global allocator + Vec/Box
+          grep -q "sum=6048" "$RUNNER_TEMP/boot-positive.log"             # Vec sum integrity check
+          grep -q "box=00000000000000a5" "$RUNNER_TEMP/boot-positive.log" # Box value intact
+          echo "PASS: handoff + framebuffer + fmt + LIONOS_INIT_OK + full C/asm stack + M2 IRQ + M2 heap observed on serial"
 
       - name: Boot smoke test (negative — must FAIL when marker is wrong)
         working-directory: kernel

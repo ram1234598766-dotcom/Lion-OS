@@ -180,7 +180,7 @@ unit-tested, and fuzzed.
 
 ### Planned
 
-- [ ] Month 2 (in progress): CPU init, memory mgmt, heap, interrupts — IDT/PIC/timer/keyboard done
+- [ ] Month 2 (in progress): CPU init, memory mgmt, heap, interrupts — IDT/PIC/timer/keyboard + heap done; frame allocator/paging next
 - [ ] Month 3: drivers, scheduler, read-only FAT32 filesystem
 - [ ] Month 4: syscalls, ring separation, ELF loader, minimal shell
 - [ ] Month 5: graphics, compositor, wallpaper
@@ -1059,8 +1059,9 @@ kernel integration.
 **Target:** Month 2
 
 - [x] IDT + PIC remap + PIT timer + PS/2 keyboard + deferred work queue (boots; `LIONOS_IRQ_FLAGS`/`LIONOS_TIMER_TICKS`/`LIONOS_IRQ_OK`)
-- [ ] CPU init: custom GDT + TSS/IST (deferred to M2W2 — needs a writable GDT page the memory manager provides)
-- [ ] Memory: frame allocator, paging, heap (`#[global_allocator]`), accounting
+- [x] Kernel heap: `#[global_allocator]` free-list allocator + accounting (boots; `LIONOS_HEAP_OK`, `Vec`/`Box` exercised)
+- [ ] Frame allocator + paging (real heap growth from free physical frames)
+- [ ] CPU init: custom GDT + TSS/IST (deferred — needs the frame allocator's writable pages)
 - [ ] QEMU integration tests (GDT/IDT, allocator stress, keyboard)
 
 ### Version 0.3 — Scheduler, drivers, filesystem
@@ -1121,6 +1122,10 @@ kernel integration.
   IRQ, and a bounded deferred-work queue drained from the idle loop.
   Boot markers: `LIONOS_IRQ_FLAGS=…` (IF=1), `LIONOS_TIMER_TICKS=…`,
   `LIONOS_IRQ_OK`. CI asserts all three.
+- **Month 2 heap:** hand-rolled first-fit free-list allocator backing
+  `#[global_allocator]` (`Vec`/`Box`/`String` now work in the kernel), with
+  allocation accounting; 42 host unit tests. Boot marker `LIONOS_HEAP_OK
+  cap=… used=… sum=… box=…`; CI asserts the `Vec` sum + `Box` value.
 
 #### Fixed
 
