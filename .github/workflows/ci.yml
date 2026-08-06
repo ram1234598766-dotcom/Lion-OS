@@ -77,7 +77,8 @@ jobs:
           # Month 2 physical frame allocator (pure accounting, boots).
           grep -q "LIONOS_FRAMES total=" "$RUNNER_TEMP/boot-positive.log" # frame allocator init'd over usable regions
           grep -q "LIONOS_FRAME_ALLOC phys=" "$RUNNER_TEMP/boot-positive.log" # alloc/dealloc exercised
-          echo "PASS: handoff + fb + fmt + LIONOS_INIT_OK + C/asm + M2 IRQ + M2 heap + M2 frames observed on serial"
+          grep -q "LIONOS_PML4 cr3=" "$RUNNER_TEMP/boot-positive.log"     # paging infra (CR3 read) live
+          echo "PASS: handoff + fb + fmt + LIONOS_INIT_OK + C/asm + M2 IRQ + M2 heap + M2 frames + paging observed on serial"
 
       - name: Boot smoke test (negative — must FAIL when marker is wrong)
         working-directory: kernel

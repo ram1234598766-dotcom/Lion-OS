@@ -1061,8 +1061,9 @@ kernel integration.
 - [x] IDT + PIC remap + PIT timer + PS/2 keyboard + deferred work queue (boots; `LIONOS_IRQ_FLAGS`/`LIONOS_TIMER_TICKS`/`LIONOS_IRQ_OK`)
 - [x] Kernel heap: `#[global_allocator]` free-list allocator + accounting (boots; `LIONOS_HEAP_OK`, `Vec`/`Box` exercised)
 - [x] Physical frame allocator over validated usable regions (pure accounting; boots `LIONOS_FRAMES total=…`, alloc/free exercised)
-- [ ] Paging: identity-map frames to grow the heap beyond the fixed 64 KiB static
-- [ ] CPU init: custom GDT + TSS/IST (deferred — needs the frame allocator's writable pages)
+- [x] Page-table helpers + tests (`paging.rs`; boots `LIONOS_PML4 cr3=…`)
+- [ ] Paging: build/own the kernel's page tables (bootloader 0.11 doesn't map its table frames, so in-place extension is impossible) → grow the heap from frames
+- [ ] CPU init: custom GDT + TSS/IST (needs the kernel's own page tables)
 - [ ] QEMU integration tests (GDT/IDT, allocator stress, keyboard)
 
 ### Version 0.3 — Scheduler, drivers, filesystem
@@ -1132,6 +1133,11 @@ kernel integration.
   frame runs, split/merge, `_end`-based floor so kernel/bootloader frames are
   never handed out); 49 host unit tests. Boot markers `LIONOS_FRAMES total=…`
   and `LIONOS_FRAME_ALLOC phys=…`; CI asserts both.
+- **Month 2 paging foundation:** `kernel/src/paging.rs` — pure 4-level page-index
+  + PTE encoding helpers (53 host tests), CR3 register read at boot
+  (`LIONOS_PML4 cr3=…`). Established the constraint that bootloader 0.11 does
+  not map its own page-table frames, so a writable map requires building the
+  kernel's own page tables (the next increment).
 
 #### Fixed
 

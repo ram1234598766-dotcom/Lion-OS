@@ -31,4 +31,5 @@ pub mod heap;
 pub mod idt;
 pub mod interrupts;
 pub mod memory;
+pub mod paging;
 pub mod serial;

@@ -29,6 +29,7 @@ use lionos_kernel::framebuffer::{self, FramebufferInfo};
 use lionos_kernel::heap;
 use lionos_kernel::interrupts;
 use lionos_kernel::memory::{self, Region, RegionKind};
+use lionos_kernel::paging;
 use lionos_kernel::serial;
 
 extern "C" {
@@ -314,6 +315,17 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
     serial::write_dec(sum as u64);
     serial::write_str(" box=");
     serial::write_hex(u64::from(*boxed));
+    serial::write_str("\r\n");
+
+    // --- Month 2: page-table ownership marker ---
+    // The bootloader 0.11 does NOT identity-map its own page tables (reading
+    // CR3's physical address faults), so the kernel cannot read/write them to
+    // extend the map in place. True paging = building + switching to the
+    // kernel's OWN page tables (a dedicated follow-up; `paging.rs` has the pure
+    // index/entry helpers + tests). Here we only report our CR3 (a safe,
+    // register-only read).
+    serial::write_str("LIONOS_PML4 cr3=");
+    serial::write_hex(paging::current_cr3());
     serial::write_str("\r\n");
 
     // Drain any deferred work the ISRs queued, then park with interrupts on so
