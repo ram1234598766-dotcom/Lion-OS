@@ -1062,7 +1062,10 @@ kernel integration.
 - [x] Kernel heap: `#[global_allocator]` free-list allocator + accounting (boots; `LIONOS_HEAP_OK`, `Vec`/`Box` exercised)
 - [x] Physical frame allocator over validated usable regions (pure accounting; boots `LIONOS_FRAMES total=…`, alloc/free exercised)
 - [x] Page-table helpers + tests (`paging.rs`; boots `LIONOS_PML4 cr3=…`)
-- [ ] Paging: build/own the kernel's page tables (bootloader 0.11 doesn't map its table frames, so in-place extension is impossible) → grow the heap from frames
+- [ ] Paging: own the kernel's page tables — **blocked**: the bootloader's
+      virtual↔physical mapping isn't derivable for CR3; `BootInfo` exposes
+      `physical_memory_offset`/`kernel_image_offset` as the lead to unblock →
+      then grow the heap from frames
 - [ ] CPU init: custom GDT + TSS/IST (needs the kernel's own page tables)
 - [ ] QEMU integration tests (GDT/IDT, allocator stress, keyboard)
 
