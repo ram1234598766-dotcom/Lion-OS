@@ -214,14 +214,14 @@ unsafe impl GlobalAlloc for KernelAlloc {
 pub static KERNEL_ALLOC: KernelAlloc = KernelAlloc(KernelHeap::empty());
 
 /// Heap capacity. `ponytail: a `static` in `.bss` — the kernel image (incl.
-/// bss) must not reach the bootloader 0.11's page-table allocation zone, so
-/// this stays modest until M2W3's frame allocator carves a real heap from free
-/// physical frames and maps it. 128 KiB keeps the whole image clear of the
-/// bootloader's structures.
+/// bss) must not reach bootloader 0.11's page-table allocation zone, so this
+/// stays modest until the frame allocator carves a real heap from free
+/// physical frames and maps it. 64 KiB keeps the whole image clear of the
+/// bootloader's structures even with the frame allocator's code in the image.
 #[cfg(target_os = "none")]
-pub const HEAP_SIZE: usize = 128 * 1024;
+pub const HEAP_SIZE: usize = 64 * 1024;
 
-/// Heap backing store (128 KiB, zero-initialized → `.bss`, writable).
+/// Heap backing store (64 KiB, zero-initialized → `.bss`, writable).
 #[cfg(target_os = "none")]
 static mut HEAP_SPACE: [u8; HEAP_SIZE] = [0; HEAP_SIZE];
 

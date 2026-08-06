@@ -74,7 +74,10 @@ jobs:
           grep -q "LIONOS_HEAP_OK cap=" "$RUNNER_TEMP/boot-positive.log"  # global allocator + Vec/Box
           grep -q "sum=6048" "$RUNNER_TEMP/boot-positive.log"             # Vec sum integrity check
           grep -q "box=00000000000000a5" "$RUNNER_TEMP/boot-positive.log" # Box value intact
-          echo "PASS: handoff + framebuffer + fmt + LIONOS_INIT_OK + full C/asm stack + M2 IRQ + M2 heap observed on serial"
+          # Month 2 physical frame allocator (pure accounting, boots).
+          grep -q "LIONOS_FRAMES total=" "$RUNNER_TEMP/boot-positive.log" # frame allocator init'd over usable regions
+          grep -q "LIONOS_FRAME_ALLOC phys=" "$RUNNER_TEMP/boot-positive.log" # alloc/dealloc exercised
+          echo "PASS: handoff + fb + fmt + LIONOS_INIT_OK + C/asm + M2 IRQ + M2 heap + M2 frames observed on serial"
 
       - name: Boot smoke test (negative — must FAIL when marker is wrong)
         working-directory: kernel

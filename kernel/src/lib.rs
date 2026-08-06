@@ -24,6 +24,7 @@ extern crate alloc;
 extern crate std;
 
 pub mod ffi;
+pub mod frames;
 pub mod framebuffer;
 pub mod gdt;
 pub mod heap;

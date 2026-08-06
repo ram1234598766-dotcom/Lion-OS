@@ -24,11 +24,17 @@ use alloc::boxed::Box;
 use alloc::vec::Vec;
 
 use lionos_kernel::ffi;
+use lionos_kernel::frames;
 use lionos_kernel::framebuffer::{self, FramebufferInfo};
 use lionos_kernel::heap;
 use lionos_kernel::interrupts;
 use lionos_kernel::memory::{self, Region, RegionKind};
 use lionos_kernel::serial;
+
+extern "C" {
+    /// End of the kernel image (linker.ld `_end`) — the frame allocator's floor.
+    static _end: u8;
+}
 
 /// Boot marker printed to COM1 on success. CI greps for this exact string.
 ///
@@ -92,6 +98,40 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
                 serial::write_str(" len=");
                 serial::write_dec(r.len);
                 serial::write_str("\r\n");
+            }
+
+            // --- Month 2: physical frame allocator (pure accounting) ---
+            // Floor = end of the kernel image (incl. bss) rounded up, plus a
+            // safety margin for bootloader 0.11's page tables/bootinfo. The
+            // allocator never dereferences frames, so no paging is needed yet.
+            let kernel_end = unsafe { (&_end as *const u8 as usize) as u64 };
+            let floor = (kernel_end + 4095) & !4095;
+            let floor = floor + 0x40000;
+            let mut usable = [(0u64, 0u64); memory::MAX_REGIONS];
+            let mut uc = 0;
+            for r in regions[..count].iter().filter(|r| r.kind == RegionKind::Usable) {
+                usable[uc] = (r.start, r.end());
+                uc += 1;
+            }
+            // SAFETY: single-CPU boot, one init call, after the map validates.
+            unsafe {
+                if frames::init_frames(&usable[..uc], floor).is_err() {
+                    serial::write_str("LIONOS_FRAMES_INIT_ERROR\r\n");
+                }
+            }
+            serial::write_str("LIONOS_FRAMES total=");
+            serial::write_dec(frames::total_frames());
+            serial::write_str(" free=");
+            serial::write_dec(frames::free_frames());
+            serial::write_str(" used=");
+            serial::write_dec(frames::used_frames());
+            serial::write_str("\r\n");
+            // Exercise alloc/dealloc so a regression fails loudly at boot.
+            if let Some(f) = frames::allocate_frame() {
+                serial::write_str("LIONOS_FRAME_ALLOC phys=");
+                serial::write_hex(f * 4096); // frame number -> physical address
+                serial::write_str("\r\n");
+                frames::deallocate_frame(f);
             }
 
             serial::write_raw(b"LIONOS_HANDOFF_OK\r\n");

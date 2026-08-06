@@ -56,6 +56,11 @@ SECTIONS
         *(.bss.*)
     }
 
+    /* End of the kernel image (start of free physical memory above it). The
+     * frame allocator uses this as its floor so it never hands out kernel or
+     * bootloader-occupied frames. */
+    _end = .;
+
     /* The C/asm objects (`c/support.c`, `asm/cpu.s`) emit these extra
      * sections; drop them so they can never become orphan LOAD segments that
      * break the page-aligned program-header layout the bootloader maps. */

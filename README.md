@@ -180,7 +180,7 @@ unit-tested, and fuzzed.
 
 ### Planned
 
-- [ ] Month 2 (in progress): CPU init, memory mgmt, heap, interrupts — IDT/PIC/timer/keyboard + heap done; frame allocator/paging next
+- [ ] Month 2 (in progress): IDT/PIC/timer/keyboard + heap + frame allocator done; paging-mapped heap growth + GDT/TSS next
 - [ ] Month 3: drivers, scheduler, read-only FAT32 filesystem
 - [ ] Month 4: syscalls, ring separation, ELF loader, minimal shell
 - [ ] Month 5: graphics, compositor, wallpaper
@@ -1060,7 +1060,8 @@ kernel integration.
 
 - [x] IDT + PIC remap + PIT timer + PS/2 keyboard + deferred work queue (boots; `LIONOS_IRQ_FLAGS`/`LIONOS_TIMER_TICKS`/`LIONOS_IRQ_OK`)
 - [x] Kernel heap: `#[global_allocator]` free-list allocator + accounting (boots; `LIONOS_HEAP_OK`, `Vec`/`Box` exercised)
-- [ ] Frame allocator + paging (real heap growth from free physical frames)
+- [x] Physical frame allocator over validated usable regions (pure accounting; boots `LIONOS_FRAMES total=…`, alloc/free exercised)
+- [ ] Paging: identity-map frames to grow the heap beyond the fixed 64 KiB static
 - [ ] CPU init: custom GDT + TSS/IST (deferred — needs the frame allocator's writable pages)
 - [ ] QEMU integration tests (GDT/IDT, allocator stress, keyboard)
 
@@ -1126,6 +1127,11 @@ kernel integration.
   `#[global_allocator]` (`Vec`/`Box`/`String` now work in the kernel), with
   allocation accounting; 42 host unit tests. Boot marker `LIONOS_HEAP_OK
   cap=… used=… sum=… box=…`; CI asserts the `Vec` sum + `Box` value.
+- **Month 2 frame allocator:** `kernel/src/frames.rs` — pure-accounting
+  physical frame allocator over the validated usable regions (free-list of
+  frame runs, split/merge, `_end`-based floor so kernel/bootloader frames are
+  never handed out); 49 host unit tests. Boot markers `LIONOS_FRAMES total=…`
+  and `LIONOS_FRAME_ALLOC phys=…`; CI asserts both.
 
 #### Fixed
 
