@@ -180,7 +180,7 @@ unit-tested, and fuzzed.
 
 ### Planned
 
-- [ ] Month 2: CPU init (GDT/TSS/IDT), memory management, heap, interrupts
+- [ ] Month 2 (in progress): CPU init, memory mgmt, heap, interrupts — IDT/PIC/timer/keyboard done
 - [ ] Month 3: drivers, scheduler, read-only FAT32 filesystem
 - [ ] Month 4: syscalls, ring separation, ELF loader, minimal shell
 - [ ] Month 5: graphics, compositor, wallpaper
@@ -1058,9 +1058,9 @@ kernel integration.
 
 **Target:** Month 2
 
-- [ ] CPU init: GDT, TSS+IST, IDT, structured diagnostics
+- [x] IDT + PIC remap + PIT timer + PS/2 keyboard + deferred work queue (boots; `LIONOS_IRQ_FLAGS`/`LIONOS_TIMER_TICKS`/`LIONOS_IRQ_OK`)
+- [ ] CPU init: custom GDT + TSS/IST (deferred to M2W2 — needs a writable GDT page the memory manager provides)
 - [ ] Memory: frame allocator, paging, heap (`#[global_allocator]`), accounting
-- [ ] Interrupts: PIC remap, timer, keyboard, deferred work queue
 - [ ] QEMU integration tests (GDT/IDT, allocator stress, keyboard)
 
 ### Version 0.3 — Scheduler, drivers, filesystem
@@ -1115,6 +1115,12 @@ kernel integration.
 - C + assembly integration into the kernel (`c/support.c`, `asm/cpu.s`,
   `build.rs`, `src/ffi.rs`), exercised at boot and asserted in CI.
 - `[ffi]` boot diagnostic (cr3/cpuid/memset/memcpy/vendor).
+- **Month 2 interrupt bring-up:** 256-gate IDT (hand-rolled gates,
+  `extern "x86-interrupt"` handlers, structured `LIONOS_FAULT` diagnostics),
+  8259 PIC remap to vectors 0x20+, 8254 PIT timer (100 Hz), PS/2 keyboard
+  IRQ, and a bounded deferred-work queue drained from the idle loop.
+  Boot markers: `LIONOS_IRQ_FLAGS=…` (IF=1), `LIONOS_TIMER_TICKS=…`,
+  `LIONOS_IRQ_OK`. CI asserts all three.
 
 #### Fixed
 

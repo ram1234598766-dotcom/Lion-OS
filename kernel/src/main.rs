@@ -20,6 +20,7 @@ use bootloader_api::BootInfo;
 
 use lionos_kernel::ffi;
 use lionos_kernel::framebuffer::{self, FramebufferInfo};
+use lionos_kernel::interrupts;
 use lionos_kernel::memory::{self, Region, RegionKind};
 use lionos_kernel::serial;
 
@@ -225,8 +226,35 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
     serial::write_raw(boot_marker().as_bytes());
     serial::write_raw(b"\r\n");
 
-    // Boot success. Park the CPU (the real kernel brings up interrupts in M2).
-    ffi::hlt();
+    // --- Month 2: interrupt bring-up (GDT → IDT → PIC → PIT → sti) ---
+    interrupts::init();
+    serial::write_str("LIONOS_IRQ_FLAGS=");
+    serial::write_hex(ffi::read_rflags()); // expect IF=1 → bit 9 set (…202)
+    serial::write_str("\r\n");
+
+    // Wait for the PIT timer to fire a few times (bounded: headless CI can
+    // still drain if the timer is somehow absent).
+    let mut spins = 0u64;
+    while interrupts::ticks() < 25 && spins < 2_000_000_000 {
+        ffi::pause();
+        spins += 1;
+    }
+    serial::write_str("LIONOS_TIMER_TICKS=");
+    serial::write_dec(interrupts::ticks());
+    serial::write_str("\r\n");
+
+    serial::write_str("LIONOS_KBD_ARMED count=");
+    serial::write_dec(interrupts::key_count());
+    serial::write_str("\r\n");
+
+    // Drain any deferred work the ISRs queued, then park with interrupts on so
+    // the timer keeps ticking (future months run a scheduler here).
+    interrupts::run_deferred();
+    serial::write_str("LIONOS_IRQ_OK\r\n");
+    loop {
+        interrupts::run_deferred();
+        ffi::hlt();
+    }
 }
 
 entry_point!(kernel_main);
