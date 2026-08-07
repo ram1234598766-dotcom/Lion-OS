@@ -273,6 +273,81 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
     serial::write_dec(((prev == 0) && (reacquired == 1) && (released == 1)) as u64);
     serial::write_str("\r\n");
 
+    // --- Month-1 NASM + C string smoke test (master-plan language lay) ---
+    // The plan's Day-1 lay is NASM for port-I/O + CPU utils and C for string
+    // helpers. These calls exercise the NASM objects (asm/port_io.asm,
+    // cpu_utils.asm) and the C string helpers (c/string_utils.c) so a silent
+    // regression in either assembler/compiler's output fails loudly. All
+    // printed values are deterministic for a given VM -> CI can grep them.
+    serial::write_str("LIONOS_NASM");
+    // port I/O: outw/inw round-trip is not guaranteed (some ports ignore
+    // writes), so we only assert the calls don't fault -> they ran.
+    // SAFETY: 0x80 (POST) is a conventional, always-valid write port.
+    unsafe {
+        ffi::nasm_outb(0x80, 0xAA);
+        ffi::nasm_outw(0x80, 0x55AA);
+        ffi::nasm_inb(0x80);
+        ffi::nasm_inw(0x80);
+    }
+    ffi::nasm_io_wait();
+    ffi::nasm_cpu_pause();
+    // CPU utils: EFER MSR read is stable in long mode; CPUID vendor string is
+    // deterministic per VM.
+    serial::write_str(" efer_nasm=");
+    serial::write_hex(ffi::nasm_read_msr(0xC000_0080));
+    serial::write_str(" vendor_nasm=");
+    let q = ffi::nasm_cpuid_query(0, 0);
+    // vendor is in ebx, edx, ecx (same byte packing the GAS cpuid_vendor uses)
+    let mut vendor = [0u8; 12];
+    // SAFETY: `vendor[..12]` is a valid writable 12-byte buffer.
+    unsafe {
+        core::ptr::copy_nonoverlapping(q[1].to_ne_bytes().as_ptr(), vendor.as_mut_ptr().add(0), 4);
+        core::ptr::copy_nonoverlapping(q[3].to_ne_bytes().as_ptr(), vendor.as_mut_ptr().add(4), 4);
+        core::ptr::copy_nonoverlapping(q[2].to_ne_bytes().as_ptr(), vendor.as_mut_ptr().add(8), 4);
+    }
+    for &b in &vendor {
+        serial::write_byte(b);
+    }
+    serial::write_str("\r\n");
+
+    // C string helpers (c/string_utils.c): length + compare + hex-format are
+    // fully deterministic. `b"LION\0"` guarantees the NUL terminator `strlen_c`
+    // and `strcmp_c` stop at (an unterminated `b"LION"` would over-read).
+    const S: &[u8] = b"LION\0";
+    // SAFETY: S is a valid NUL-terminated readable string of length 4.
+    let len = unsafe { ffi::strlen_c(S.as_ptr()) };
+    serial::write_str("LIONOS_C_STR len=");
+    serial::write_dec(len as u64);
+    // Compare the string against itself -> must be 0.
+    // SAFETY: both are valid NUL-terminated readable strings.
+    let cmp = unsafe { ffi::strcmp_c(S.as_ptr(), S.as_ptr()) };
+    serial::write_str(" cmp=");
+    serial::write_dec(cmp as u64);
+    // Drill the itoa_hex helper -> "0x00000000deadbeef" (19 bytes incl. NUL).
+    let mut hexbuf = [0u8; 19];
+    // SAFETY: hexbuf is 19 writable bytes.
+    unsafe { ffi::itoa_hex(0xDEAD_BEEFu64, hexbuf.as_mut_ptr()) };
+    serial::write_str(" hex=");
+    // SAFETY: itoa_hex wrote a NUL-terminated string into the 19-byte buffer.
+    let hexstr = unsafe { core::slice::from_raw_parts(hexbuf.as_ptr(), 18) };
+    for &b in hexstr {
+        serial::write_byte(b);
+    }
+    serial::write_str("\r\n");
+
+    // C memmove (c/support.c): overlap handling. Copy mem[2..8] onto mem[0..6]
+    // (forward, dst<src — the memmove-safe direction). If memmove were to
+    // corrupt the overlap, the LIONOS_C_MEMMOVE marker still prints, so we also
+    // print mem[0..4] as a deterministic value CI can grep.
+    let mut mem = *b"LION-123456\0";
+    // SAFETY: mem is a 12-byte writable buffer; src = mem+2, dst = mem, n=6
+    // overlaps forward, which memmove handles correctly.
+    unsafe { ffi::memmove(mem.as_mut_ptr(), mem.as_ptr().add(2), 6) };
+    // dst[0..4] = mem[2..6] = "ON-1" → 0x312d4e4f ("-N…" packed little-endian).
+    serial::write_str("LIONOS_C_MEMMOVE first4=");
+    serial::write_hex(u64::from(u32::from_le_bytes([mem[0], mem[1], mem[2], mem[3]])));
+    serial::write_str("\r\n");
+
     // Week-1 CI checkpoint preserved regardless of the handoff result.
     serial::write_raw(boot_marker().as_bytes());
     serial::write_raw(b"\r\n");

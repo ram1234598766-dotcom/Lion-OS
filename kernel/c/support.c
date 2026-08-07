@@ -17,6 +17,7 @@ typedef unsigned long size_t;
 void *lion_memset(void *, int, size_t);
 void *lion_memcpy(void *, const void *, size_t);
 int   lion_memcmp(const void *, const void *, size_t);
+void *lion_memmove(void *, const void *, size_t);
 
 void *lion_memset(void *dst, int c, size_t n) {
     unsigned char *d = (unsigned char *)dst;
@@ -39,6 +40,22 @@ int lion_memcmp(const void *a, const void *b, size_t n) {
         if (d) return d;
     }
     return 0;
+}
+
+/* lion_memmove — copy n bytes, correct when src/dst overlap (the case where
+ * memcpy's forward copy would corrupt src before reading it). Copies forward
+ * when dst <= src, backward otherwise. Part of the Month-1 C helper set
+ * (rounds out memset/memcpy/memcmp/memmove). */
+void *lion_memmove(void *dst, const void *src, size_t n) {
+    unsigned char       *d = (unsigned char *)dst;
+    const unsigned char *s = (const unsigned char *)src;
+    if (d < s || d >= s + n) {
+        while (n--) *d++ = *s++;
+    } else {
+        d += n; s += n;
+        while (n--) *--d = *--s;
+    }
+    return dst;
 }
 
 /* C calling assembly — the Rust -> C -> asm chain. `lion_cpuid` is the asm

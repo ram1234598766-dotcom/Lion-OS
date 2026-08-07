@@ -1,15 +1,24 @@
 //! Foreign-function (C + assembly) bridge — Month 1 refinement.
 //!
 //! The kernel is Rust-first, but a guarded slice of low-level support is
-//! written in freestanding C (`kernel/c/support.c`, `kernel/c/fb.c`) and
-//! assembly (`kernel/asm/cpu.s`) and linked in by `build.rs`. This module
-//! declares those symbols and wraps them in safe Rust functions so the rest of
-//! the kernel never touches raw `extern "C"` pointers directly.
+//! written in freestanding C (`kernel/c/support.c`, `kernel/c/fb.c`,
+//! `kernel/c/string_utils.c`) and assembly (`kernel/asm/cpu.s` in GAS,
+//! `kernel/asm/port_io.asm` + `kernel/asm/cpu_utils.asm` in NASM) and linked in
+//! by `build.rs`. This module declares those symbols and wraps them in safe Rust
+//! functions so the rest of the kernel never touches raw `extern "C"` pointers.
 //!
 //! The call graph is deliberately layered so each half of the mixed-language
 //! stack is exercised at boot: Rust calls C (`fb_*`, `memset`), C calls
 //! assembly (`lion_cpu_leaf1_edx` → `lion_cpuid`), and Rust calls assembly
-//! directly (`read_msr`, `read_rflags`, `xchg8`).
+//! directly (`read_msr`, `read_rflags`, `xchg8`, and the NASM port-I/O layer).
+//!
+//! Both assembly syntaxes the plan calls for coexist here:
+//!   · GAS  (`asm/cpu.s`) expose `lion_*` symbols;
+//!   · NASM (`asm/port_io.asm`, `asm/cpu_utils.asm`) expose the bare
+//!     `outb`/`inb`/…/`read_msr`/`cpuid_query` names, bound below via
+//!     `#[link_name]` to Rust names suffixed `_nasm`.
+//! The boot smoke calls both so a symbol-name or ABI regression in either
+//! assembler's output fails loudly.
 //!
 //! All call sites today are single-CPU, interrupt-free boot context; the C/asm
 //! objects are position-dependent small-code-model and deliberately avoid
@@ -54,6 +63,47 @@ extern "C" {
 
     // C calling assembly: kernel/c/support.c → asm/cpu.s `lion_cpuid`.
     fn lion_cpu_leaf1_edx() -> u32;
+
+    // ── NASM layer (kernel/asm/port_io.asm, cpu_utils.asm) ───────────────
+    // Month-1 plan language lay: NASM for low-level port-I/O + CPU utils.
+    // Symbol names (outb/inb/…) come from the NASM files; Rust names are
+    // suffixed `_nasm` (via #[link_name]) so they don't collide with the GAS
+    // `lion_*`/`inb`/`outb` wrappers above.
+    #[link_name = "outb"]
+    fn outb_nasm(port: u16, value: u8);
+    #[link_name = "inb"]
+    fn inb_nasm(port: u16) -> u8;
+    #[link_name = "outw"]
+    fn outw_nasm(port: u16, value: u16);
+    #[link_name = "inw"]
+    fn inw_nasm(port: u16) -> u16;
+    #[link_name = "io_wait"]
+    fn io_wait_nasm();
+    #[link_name = "cpu_pause"]
+    fn cpu_pause_nasm();
+    #[link_name = "cpu_halt"]
+    fn cpu_halt_nasm();
+    #[link_name = "enable_interrupts"]
+    fn enable_interrupts_nasm();
+    #[link_name = "disable_interrupts"]
+    fn disable_interrupts_nasm();
+    #[link_name = "read_msr"]
+    fn read_msr_nasm(msr: u32) -> u64;
+    #[link_name = "write_msr"]
+    fn write_msr_nasm(msr: u32, value: u64);
+    #[link_name = "cpuid_query"]
+    fn cpuid_query_nasm(
+        leaf: u32, subleaf: u32, eax: *mut u32, ebx: *mut u32, ecx: *mut u32, edx: *mut u32,
+    );
+
+    // ── C string helpers (kernel/c/string_utils.c) ───────────────────────
+    fn lionos_strlen(s: *const u8) -> usize;
+    fn lionos_strcmp(a: *const u8, b: *const u8) -> core::ffi::c_int;
+    fn lionos_strcpy(dst: *mut u8, src: *const u8) -> *mut u8;
+    fn lionos_itoa_hex(val: u64, buf: *mut u8);
+
+    // C memmove (kernel/c/support.c) — rounds out memset/memcpy/memcmp.
+    fn lion_memmove(dst: *mut u8, src: *const u8, len: usize) -> *mut u8;
 }
 
 /// Fill `dst[..len]` with `val` (C `memset`).
@@ -114,7 +164,7 @@ pub fn read_cr3() -> u64 {
     unsafe { lion_read_cr3() }
 }
 
-/// Execute `CPUID(leaf, subleaf)`, returning `eax, ebx, ecx, edx`.
+/// Execute `CPUID(leaf, subleaf)`, returning `[eax, ebx, ecx, edx]`.
 pub fn cpuid(leaf: u32, subleaf: u32) -> [u32; 4] {
     let mut out = [0u32; 4];
     // SAFETY: `out.as_mut_ptr()` points to a valid 4-word writable buffer of the
@@ -220,9 +270,156 @@ pub unsafe fn fb_pixel(base: *mut u8, w: u32, h: u32, pitch: u32, bpp: u32, x: u
 }
 
 /// CPUID leaf-1 feature bits (`edx`), computed by **C calling assembly**
-/// (`support.c::lion_cpu_leaf1_edx` → `cpu.s::lion_cpuid`).
+/// (`support.c::lion_cpu_edx` → `cpu.s::lion_cpuid`).
 pub fn cpu_leaf1_edx() -> u32 {
     // SAFETY: lion_cpuid writes into a C-side stack buffer; the C wrapper owns
     // the whole interaction and returns a plain integer.
     unsafe { lion_cpu_leaf1_edx() }
+}
+
+// ---------------------------------------------------------------------------
+// NASM-layer safe wrappers (Month-1 plan language lay).
+//
+// These call the NASM port_io/cpu_utils objects (kernel/asm/port_io.asm,
+// cpu_utils.asm). They share the GAS `lion_*` wrappers above; the boot smoke
+// calls both so a regression in either assembler's output fails loudly.
+// ---------------------------------------------------------------------------
+
+/// Write a byte to an I/O port (NASM `outb`).
+///
+/// # Safety
+/// `port` must be a valid, currently-enabled port.
+pub unsafe fn nasm_outb(port: u16, value: u8) {
+    // SAFETY: forwarded from the caller's port contract.
+    unsafe { outb_nasm(port, value) }
+}
+
+/// Read a byte from an I/O port (NASM `inb`).
+///
+/// # Safety
+/// `port` must be a valid port.
+pub unsafe fn nasm_inb(port: u16) -> u8 {
+    // SAFETY: forwarded from the caller's port contract.
+    unsafe { inb_nasm(port) }
+}
+
+/// Write a 16-bit word to an I/O port (NASM `outw`).
+pub unsafe fn nasm_outw(port: u16, value: u16) {
+    unsafe { outw_nasm(port, value) }
+}
+
+/// Read a 16-bit word from an I/O port (NASM `inw`).
+pub unsafe fn nasm_inw(port: u16) -> u16 {
+    unsafe { inw_nasm(port) }
+}
+
+/// I/O delay (~1-2 µs) by writing to the POST port 0x80 (NASM `io_wait`).
+pub fn nasm_io_wait() {
+    // SAFETY: writing to POST port 0x80 is always safe.
+    unsafe { io_wait_nasm() }
+}
+
+/// x86 PAUSE hint for spin loops (NASM `cpu_pause`).
+pub fn nasm_cpu_pause() {
+    // SAFETY: pause is always safe.
+    unsafe { cpu_pause_nasm() }
+}
+
+/// Halt until the next interrupt (NASM `cpu_halt`). Requires IF=1 + IDT.
+pub fn nasm_cpu_halt() {
+    // SAFETY: hlt parks the CPU until the next interrupt; needs a loaded IDT.
+    unsafe { cpu_halt_nasm() }
+}
+
+/// Enable interrupts (NASM `enable_interrupts`, sti).
+pub fn nasm_enable_interrupts() {
+    // SAFETY: sti is always safe.
+    unsafe { enable_interrupts_nasm() }
+}
+
+/// Disable interrupts (NASM `disable_interrupts`, cli).
+pub fn nasm_disable_interrupts() {
+    // SAFETY: cli is always safe.
+    unsafe { disable_interrupts_nasm() }
+}
+
+/// Read a model-specific register (NASM `read_msr`, rdmsr).
+pub fn nasm_read_msr(msr: u32) -> u64 {
+    // SAFETY: rdmsr on a valid, readable MSR is safe; callers choose known MSRs.
+    unsafe { read_msr_nasm(msr) }
+}
+
+/// Write a model-specific register (NASM `write_msr`, wrmsr).
+///
+/// # Safety
+/// `msr` must be a writable, currently-allowed MSR; writing the wrong MSR can
+/// crash the CPU.
+pub unsafe fn nasm_write_msr(msr: u32, value: u64) {
+    unsafe { write_msr_nasm(msr, value) }
+}
+
+/// Execute `CPUID(leaf, subleaf)` via the NASM `cpuid_query`, returning
+/// `[eax, ebx, ecx, edx]`. The NASM routine parks pointer bases in r10/r11
+/// before `cpuid` (the EDX/ECX-clobber fix), so it is safe from Rust.
+pub fn nasm_cpuid_query(leaf: u32, subleaf: u32) -> [u32; 4] {
+    let mut out = [0u32; 4];
+    // SAFETY: out points to a valid 4-word writable buffer with the call's
+    // lifetime; the NASM routine writes exactly out[0..4].
+    unsafe {
+        cpuid_query_nasm(
+            leaf,
+            subleaf,
+            out.as_mut_ptr().add(0),
+            out.as_mut_ptr().add(1),
+            out.as_mut_ptr().add(2),
+            out.as_mut_ptr().add(3),
+        )
+    };
+    out
+}
+
+/// Length of a NUL-terminated C string (C `lionos_strlen`).
+///
+/// # Safety
+/// `s` must point to a NUL-terminated readable byte string.
+pub unsafe fn strlen_c(s: *const u8) -> usize {
+    // SAFETY: forwarded from the caller's string contract.
+    unsafe { lionos_strlen(s) }
+}
+
+/// Compare two NUL-terminated C strings (C `lionos_strcmp`): 0 if equal.
+///
+/// # Safety
+/// `a`/`b` must point to NUL-terminated readable strings.
+pub unsafe fn strcmp_c(a: *const u8, b: *const u8) -> i32 {
+    // SAFETY: forwarded from the caller's string contract.
+    unsafe { lionos_strcmp(a, b) }
+}
+
+/// Copy the NUL-terminated string `src` into `dst` (C `lionos_strcpy`).
+/// `dst` must be large enough — no bounds check.
+///
+/// # Safety
+/// `dst` must be writable for the length of `src` plus the NUL.
+pub unsafe fn strcpy_c(dst: *mut u8, src: *const u8) -> *mut u8 {
+    // SAFETY: forwarded from the caller's buffer contract.
+    unsafe { lionos_strcpy(dst, src) }
+}
+
+/// Format `val` as a 19-byte `0x` hex string into `buf` (C `lionos_itoa_hex`).
+///
+/// # Safety
+/// `buf` must point to at least 19 writable bytes.
+pub unsafe fn itoa_hex(val: u64, buf: *mut u8) {
+    // SAFETY: forwarded from the caller's buffer contract.
+    unsafe { lionos_itoa_hex(val, buf) }
+}
+
+/// C `memmove` (overlap-safe) — completes the C helper set (memset/memcpy/memcmp/memmove).
+///
+/// # Safety
+/// `dst` must be `len` writable bytes; `src` must be `len` readable bytes.
+pub unsafe fn memmove(dst: *mut u8, src: *const u8, len: usize) -> *mut u8 {
+    // SAFETY: forwarded from the caller's buffer contract.
+    unsafe { lion_memmove(dst, src, len) }
 }

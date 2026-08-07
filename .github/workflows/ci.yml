@@ -11,8 +11,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install system deps (QEMU + mtools)
-        run: sudo apt-get update && sudo apt-get install -y qemu-system-x86 mtools
+      - name: Install system deps (QEMU + mtools + NASM)
+        # NASM assembles kernel/asm/port_io.asm + cpu_utils.asm via build.rs.
+        run: sudo apt-get update && sudo apt-get install -y qemu-system-x86 mtools nasm
 
       - name: Install pinned nightly Rust with freestanding target
         uses: dtolnay/rust-toolchain@stable
@@ -78,7 +79,15 @@ jobs:
           grep -q "LIONOS_FRAMES total=" "$RUNNER_TEMP/boot-positive.log" # frame allocator init'd over usable regions
           grep -q "LIONOS_FRAME_ALLOC phys=" "$RUNNER_TEMP/boot-positive.log" # alloc/dealloc exercised
           grep -q "LIONOS_PML4 cr3=" "$RUNNER_TEMP/boot-positive.log"     # paging infra (CR3 read) live
-          echo "PASS: handoff + fb + fmt + LIONOS_INIT_OK + C/asm + M2 IRQ + M2 heap + M2 frames + paging observed on serial"
+          # Month-1 NASM + C string smoke (master-plan language lay): the NASM
+          # port_io/cpu_utils objects and C string helpers ran without a fault.
+          grep -q "LIONOS_NASM" "$RUNNER_TEMP/boot-positive.log"          # NASM port-I/O + CPU utils exercised
+          grep -q "vendor_nasm=" "$RUNNER_TEMP/boot-positive.log"         # NASM cpuid_query returned a vendor string
+          grep -q "LIONOS_C_STR len=4" "$RUNNER_TEMP/boot-positive.log"   # C lionos_strlen("LION") == 4
+          grep -q "cmp=0" "$RUNNER_TEMP/boot-positive.log"                # C lionos_strcmp(a, a) == 0
+          grep -q "hex=0x00000000deadbeef" "$RUNNER_TEMP/boot-positive.log" # C lionos_itoa_hex deterministic
+          grep -q "LIONOS_C_MEMMOVE" "$RUNNER_TEMP/boot-positive.log"     # C lion_memmove overlap-safe
+          echo "PASS: handoff + fb + fmt + LIONOS_INIT_OK + C/asm + M2 IRQ + M2 heap + M2 frames + paging + NASM/C-str observed on serial"
 
       - name: Boot smoke test (negative — must FAIL when marker is wrong)
         working-directory: kernel
@@ -135,12 +144,14 @@ jobs:
           path: launcher/target/${{ matrix.target }}/release/lionos${{ matrix.os == 'windows-latest' && '.exe' || '' }}
           if-no-files-found: error
 
-  # Intel-macOS builds are kept as their own job: free-tier macos-13 runners
-  # are heavily contended and can queue for a long time, which would otherwise
-  # block the Linux e2e job below.
+  # Intel-macOS builds are kept as their own job: macos-13 was RETIRED by
+  # GitHub in December 2025 (jobs queue forever, no runner ever picks them up),
+  # so the plan mandates macos-15-intel for the x86_64 macOS target. Free-tier
+  # Intel runners are still contended, so keep this on its own job so it can't
+  # block the Linux e2e below.
   launcher-build-intel:
-    name: launcher (macos-13 x64)
-    runs-on: macos-13
+    name: launcher (macos-15-intel x64)
+    runs-on: macos-15-intel
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -166,8 +177,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install QEMU
-        run: sudo apt-get update && sudo apt-get install -y qemu-system-x86
+      - name: Install QEMU + NASM
+        # NASM is needed because os/ builds the kernel (which assembles the
+        # NASM sources) as a build artifact.
+        run: sudo apt-get update && sudo apt-get install -y qemu-system-x86 nasm
 
       - name: Install pinned nightly + build boot image
         uses: dtolnay/rust-toolchain@stable
