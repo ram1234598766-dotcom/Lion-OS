@@ -1005,24 +1005,39 @@ Host-side CLI that builds the QEMU arg vector and runs it.
 
 ### Overview
 
-No driver framework yet — Month-3 territory. Today the only "driver" is the
-COM1 serial block in `serial.rs` plus hardware access via the assembly/C layer.
+A real driver layer lives in `kernel/src/drivers/` (Month 3), initialized by
+`drivers::init_all()` at boot. Each driver prints a deterministic boot marker so
+a silent init failure is caught by CI. Hardware access still goes through the
+assembly/C layer (`ffi`).
 
 ### Driver Categories
 
 | Category | Description | Examples |
 |----------|-------------|----------|
-| Serial | N/A (row) | COM1 (`serial.rs`) |
-| CPU support | N/A (asm layer) | `read_cr3`, `cpuid` |
-| Framebuffer | planned (Month 3/5) | validator scaffold |
-| Input / storage | planned (Months 3–5) | — |
+| Serial | COM1 UART, spinlock-serialized | `serial.rs` |
+| CPU support | asm layer | `read_cr3`, `cpuid`, `write_cr3` |
+| Framebuffer / text | 5x7 bitmap font on the fb | `drivers/fbtext.rs` |
+| Input | PS/2 keyboard + mouse | `drivers/keyboard.rs`, `drivers/mouse.rs` |
+| Clock | CMOS RTC | `drivers/rtc.rs` |
+| Bus | PCI config-space probe | `drivers/pci.rs` |
+| Console | VGA text mode (0xB8000) | `drivers/vga.rs` |
+| Audio | PC speaker (PIT ch2) | `drivers/speaker.rs` |
+| Security | simulated biometric gate ("face id") | `drivers/face_id.rs` |
 
 ### Supported Drivers
 
 | Driver | Status | Description |
 |--------|--------|-------------|
-| COM1 Serial | ✅ | Minimal, raw |
+| COM1 Serial (spinlock) | ✅ | W1D1 formalized |
 | CPU (cr3/cpuid/hlt/cli/sti) | ✅ | asm stubs |
+| Framebuffer bitmap text | ✅ | 5x7 font, `LIONOS_FB_TEXT` |
+| PS/2 keyboard → ASCII | ✅ | set-1 scancode decode |
+| PS/2 mouse (IRQ12) | ✅ | 3-byte packet decode |
+| CMOS RTC clock | ✅ | `LIONOS_DRV_RTC` |
+| PCI bus 0 enumeration | ✅ | `LIONOS_DRV_PCI` |
+| VGA text mode | ✅ | `LIONOS_DRV_VGA` |
+| PC speaker | ✅ | `LIONOS_DRV_SPEAKER` |
+| "Face ID" (simulated) | ✅ | enroll → verify/gate, `LIONOS_DRV_FACEID` |
 | Framebuffer | 📋 | validator scaffold only |
 | PS/2 / virtio-blk | 📋 | planned |
 
@@ -1138,6 +1153,29 @@ kernel integration.
 ---
 
 ## Changelog
+
+### [Unreleased] — Month 3 (drivers)
+
+#### Added
+
+- **Driver layer** (`kernel/src/drivers/`), beyond the plan's required serial +
+  framebuffer + text trio:
+  - `spinlock.rs` — minimal test-and-set lock (backed by an atomic swap);
+    `serial.rs` formalized with it (W1D1: no interleaved output).
+  - `drivers/fbtext.rs` + `font5x7.rs` — 5x7 bitmap-font text on the
+    framebuffer (`LIONOS_FB_TEXT`), W1D3.
+  - `drivers/keyboard.rs` — PS/2 scancode set-1 → ASCII decoder (Shift-aware).
+  - `drivers/mouse.rs` — PS/2 mouse (IRQ12) 3-byte packet decode.
+  - `drivers/rtc.rs` — CMOS real-time clock (`LIONOS_DRV_RTC`).
+  - `drivers/pci.rs` — PCI bus-0 config-space enumeration (`LIONOS_DRV_PCI`).
+  - `drivers/vga.rs` — VGA text-mode console at 0xB8000 (via the physical
+    window — identity-mapping low memory isn't available post-takeover).
+  - `drivers/speaker.rs` — PC speaker (PIT channel 2) beep.
+  - `drivers/face_id.rs` — a **simulated** biometric identity gate ("face id"):
+    no camera/ML on QEMU, so it exercises the real driver boundary + access
+    policy (enroll → verify/gate), clearly labeled a mock (`LIONOS_DRV_FACEID`).
+- All driver inits print deterministic markers that CI greps; 76 host unit
+  tests (was 57).
 
 ### [v0.2.0] — Month 2
 

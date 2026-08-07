@@ -209,12 +209,20 @@ extern "x86-interrupt" fn timer_isr(_: crate::idt::InterruptStackFrame) {
 }
 
 #[cfg(target_os = "none")]
-extern "x86-interrupt" fn keyboard_isr(_: crate::idt::InterruptStackFrame) {
+extern "x86-interrupt" fn keyboard_isr(_frame: crate::idt::InterruptStackFrame) {
     // 8042 data register (raw scancode). Read clears the "data ready" bit.
     let sc = unsafe { ffi::inb(0x60) };
     LAST_SCAN.store(u64::from(sc), Ordering::SeqCst);
     KEY_COUNT.fetch_add(1, Ordering::SeqCst);
     eoi(1);
+}
+
+#[cfg(target_os = "none")]
+extern "x86-interrupt" fn mouse_isr(_frame: crate::idt::InterruptStackFrame) {
+    // 8042 data port holds the next PS/2 mouse byte; feed the packet decoder.
+    let raw = unsafe { ffi::inb(0x60) };
+    crate::drivers::mouse::handle_byte(raw);
+    eoi(12);
 }
 
 /// Full interrupt bring-up: GDT → IDT → IRQ gates → PIC remap → PIT → `sti`.
@@ -230,11 +238,16 @@ pub fn init() {
 
     crate::idt::init();
 
-    // Wire the two real IRQ vectors (after `lidt`, so in-place gates go live).
+    // Wire the IRQ vectors (after `lidt`, so in-place gates go live).
     crate::idt::install(0x20, timer_isr as *const () as u64, 0);
     crate::idt::install(0x21, keyboard_isr as *const () as u64, 0);
+    // PS/2 mouse IRQ12 → vector 0x2C (installed before sti; armed by mouse::init).
+    crate::idt::install(0x2C, mouse_isr as *const () as u64, 0);
 
     remap();
+    // Unmask the slave PIC's IRQ4 (which is IRQ12) so mouse packets arrive.
+    // SAFETY: slave PIC data port (0xA1); OCW1 clear bit 4.
+    unsafe { ffi::outb(0xA1, 0xEF) };
     timer_init(100);
     crate::ffi::sti();
 }

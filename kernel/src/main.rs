@@ -262,6 +262,24 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
                         );
                     }
                     serial::write_raw(b"LIONOS_FB_DRAW_OK\r\n");
+
+                    // --- Month 3: framebuffer bitmap-text driver (W1D3) ---
+                    // Render text into the same validated framebuffer so the
+                    // glyph layer is exercised at boot; CI greps LIONOS_FB_TEXT.
+                    let fb_desc = FramebufferInfo {
+                        address: fb.buffer().as_ptr() as u64,
+                        width: v.width,
+                        height: v.height,
+                        bpp: v.bpp,
+                        pitch: v.pitch,
+                    };
+                    // SAFETY: `fb_desc` is the just-validated framebuffer.
+                    unsafe {
+                        lionos_kernel::drivers::fbtext::draw_str(
+                            &fb_desc, 80, 120, "LIONOS v0.2.0", 0x00ff00,
+                        );
+                    }
+                    serial::write_raw(b"LIONOS_FB_TEXT ok\r\n");
                 }
                 Err(e) => {
                     serial::write_raw(b"LIONOS_FB_ERROR code=");
@@ -474,6 +492,14 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
     // the timer keeps ticking (future months run a scheduler here).
     interrupts::run_deferred();
     serial::write_str("LIONOS_IRQ_OK\r\n");
+
+    // --- Month 3: device drivers ---
+    // Beyond the plan's required serial/fb/text drivers (now formalized), this
+    // inits the extra real drivers (RTC clock, PCI bus 0, VGA text, PC speaker,
+    // keyboard decode, PS/2 mouse) + the simulated biometric gate. Runs after
+    // interrupts are up (mouse ISR + PIC unmask are in interrupts::init).
+    lionos_kernel::drivers::init_all();
+
     loop {
         interrupts::run_deferred();
         ffi::hlt();

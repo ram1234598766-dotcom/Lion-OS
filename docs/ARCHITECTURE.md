@@ -188,7 +188,37 @@ Month 2 brings the kernel's own CPU-core + memory primitives up behind `sti`.
   `HEAP_SIZE` of physical frames at a fresh 512 GiB region (via `map_range`)
   instead of a baked-in `.bss` array — the concrete payoff of owning paging.
 
-## 3. Drivers & Filesystem — *Month 3 (pending)*
+## 3. Drivers — *Month 3 (shipped, driver layer)*
+
+A real driver layer under `kernel/src/drivers/`, beyond the plan's required
+serial/framebuffer/text trio. Each driver prints a deterministic boot marker so
+CI can assert it initialized.
+
+- **Serial** (`serial.rs`, W1D1) — formalized with a `SpinLock` (`spinlock.rs`)
+  so output from the deferred main loop and ISRs never interleaves; the public
+  write path locks once per logical message.
+- **Framebuffer text** (`drivers/fbtext.rs`, `font5x7.rs`, W1D3) — 5x7 bitmap
+  font, `draw_str`/`put_char` with right-edge clipping. Marker `LIONOS_FB_TEXT`.
+- **PS/2 keyboard** (`drivers/keyboard.rs`) — scancode-set-1 → ASCII decoder with
+  Shift handling (pure, host-tested).
+- **PS/2 mouse** (`drivers/mouse.rs`) — arms IRQ12 + the 8042 aux channel and
+  decodes 3-byte packets to dx/dy/buttons (packet decoder is host-tested).
+- **CMOS RTC** (`drivers/rtc.rs`) — reads the real date/time over 0x70/0x71
+  (BCD decode + update-in-progress wait). Marker `LIONOS_DRV_RTC`.
+- **PCI bus 0 enumeration** (`drivers/pci.rs`) — 0xCF8/0xCFC config-space probe,
+  lists present devices (vendor/device/class). Marker `LIONOS_DRV_PCI`.
+- **VGA text mode** (`drivers/vga.rs`) — 80x25 console at physical 0xB8000,
+  reached through the physical-memory window (bootloader 0.11 doesn't
+  identity-map low memory — this was a real #PF found at boot and fixed).
+- **PC speaker** (`drivers/speaker.rs`) — PIT channel-2 beep.
+- **Biometric gate** (`drivers/face_id.rs`) — a **simulated** "face id": no
+  camera/ML on QEMU, so it exercises the real driver boundary + access policy
+  (enroll a descriptor → `verify`/`gate`), clearly labeled a mock (same
+  convention as the plan's Month-6 AI stub). Matching logic is host-tested.
+
+Scheduler + read-only FAT32 are the rest of Month 3 (pending).
+
+## 4. Userland & Syscalls — *Month 4 (pending)*
 
 ## 4. Userland & Syscalls — *Month 4 (pending)*
 

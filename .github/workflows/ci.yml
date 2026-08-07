@@ -97,7 +97,17 @@ jobs:
           # Month-2 GDT + TSS/IST: custom GDT installed with an IST0 double-fault
           # stack (lgdt + ltr both succeeded, else the boot triple-faults here).
           grep -q "LIONOS_GDT_OK ist0=" "$RUNNER_TEMP/boot-positive.log"  # 64-bit TSS with IST0 wired
-          echo "PASS: handoff + fb + fmt + LIONOS_INIT_OK + C/asm + M2 IRQ + M2 heap + M2 frames + paging takeover + GDT/TSS + NASM/C-str observed on serial"
+          # Month-3 device drivers (required + extra): each prints a marker so a
+          # driver that silently fails to init is caught in CI.
+          grep -q "LIONOS_DRV_RTC " "$RUNNER_TEMP/boot-positive.log"       # CMOS clock read a timestamp
+          grep -q "LIONOS_DRV_PCI devs=" "$RUNNER_TEMP/boot-positive.log"  # PCI bus 0 enumerated devices
+          grep -q "LIONOS_DRV_VGA ok" "$RUNNER_TEMP/boot-positive.log"     # VGA text-mode console
+          grep -q "LIONOS_DRV_SPEAKER ok" "$RUNNER_TEMP/boot-positive.log" # PC speaker beep
+          grep -q "LIONOS_DRV_KBD decode_a=97" "$RUNNER_TEMP/boot-positive.log" # PS/2 scancode decode('a')
+          grep -q "LIONOS_DRV_MOUSE armed" "$RUNNER_TEMP/boot-positive.log" # PS/2 mouse armed
+          grep -q "LIONOS_DRV_FACEID auth=1 deny=1" "$RUNNER_TEMP/boot-positive.log" # biometric gate authenticates + denies
+          grep -q "LIONOS_FB_TEXT ok" "$RUNNER_TEMP/boot-positive.log"     # framebuffer bitmap-font text
+          echo "PASS: handoff + fb + fmt + LIONOS_INIT_OK + C/asm + M2 IRQ + M2 heap + M2 frames + paging takeover + GDT/TSS + NASM/C-str + M3 driver layer observed on serial"
 
       - name: Boot smoke test (negative — must FAIL when marker is wrong)
         working-directory: kernel
