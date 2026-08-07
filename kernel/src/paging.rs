@@ -156,11 +156,268 @@ pub unsafe fn probe(virt: u64) -> u64 {
     *(pt_addr as *const u64).add(index1(virt))
 }
 
-// NOTE: the `takeover` (owning page tables) is DEFERRED. Bootloader 0.11 does
-// not expose its virtual↔physical mapping, so the *physical* address of a fresh
-// PML4 (what CR3 needs) cannot be derived from the arena's virtual address —
-// `mov cr3, <&arena>` faults. The index/entry helpers below are the tested
-// building blocks for the eventual takeover.
+// ---------------------------------------------------------------------------
+// Page-table TAKEOVER (M2W3c unblock).
+//
+// How this is no longer blocked: bootloader 0.11 with `mappings.physical_memory`
+// enabled (see main.rs `BOOT_CONFIG`) exposes `BootInfo.physical_memory_offset`
+// — a virtual window over the WHOLE physical address space. So any physical
+// frame `P` (including the bootloader's own table frames, which were previously
+// virt-inaccessible) is reachable at `P + offset`. We can now:
+//   • read the bootloader's live PML4 (at phys CR3) to inherit its mappings;
+//   • write a fresh PML4 frame (allocated from `frames::`) at its phys address,
+//     so `mov cr3` gets a real physical root — no more `mov cr3, <&arena>` fault.
+//
+// Takeover strategy (keeps all live translations valid so execution continues):
+//   1. allocate one frame for the kernel's OWN PML4 (phys = frame /* 4096);
+//   2. copy the bootloader's 512 top-level PML4 entries into it through the
+//      physical window (preserves kernel image, boot stack, boot info, the
+//      physical-memory window, device MMIO — everything currently mapped);
+//   3. `mov cr3` to our frame's PHYSICAL address + TLB flush (write_cr3 does it);
+//   4. now the kernel owns CR3. New mappings are added through the same window.
+//
+// This is deliberately *incremental*: we copy the top level and share the
+// bootloader's lower tables at first. It lets the kernel map/unmap new pages
+// and (later months) replace the lower tables wholesale with fully-owned ones.
+//---------------------------------------------------------------------------
+
+/// Error from a page-table operation.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MapError {
+    /// The frame allocator returned `None` (out of physical frames).
+    OutOfFrames,
+}
+
+// --- physical-memory window primitives (kernel target) ----------------------
+
+/// The physical-memory window offset, recorded by [`takeover`] so later callers
+/// (heap, GDT) don't need to thread it through every call. Single-CPU boot.
+#[cfg(target_os = "none")]
+static mut PHYS_OFFSET: u64 = 0;
+
+/// The physical window offset (recorded by the takeover).
+#[cfg(target_os = "none")]
+pub fn phys_offset() -> u64 {
+    // SAFETY: single-CPU boot; PHYS_OFFSET is set once by takeover, read-only here.
+    unsafe { PHYS_OFFSET }
+}
+
+/// Convert a physical address to its virtual address via the bootloader's
+/// physical-memory window (`phys + offset`). All header reads/writes below route
+/// through here so the kernel can touch any physical frame, incl. page tables.
+#[cfg(target_os = "none")]
+fn phys_to_virt(phys: u64, offset: u64) -> u64 {
+    phys.wrapping_add(offset)
+}
+
+/// Read one page-table entry (8 bytes) at physical `table_phys` + `index`,
+/// through the physical window.
+///
+/// # Safety
+/// `table_phys` must be the physical address of a present page table; `index`
+/// must be < 512; `offset` must be the (valid, mapped) physical window offset.
+#[cfg(target_os = "none")]
+unsafe fn table_read(table_phys: u64, offset: u64, index: usize) -> u64 {
+    // SAFETY: caller guarantees `table_phys` is a present, mapped table frame.
+    unsafe { *(phys_to_virt(table_phys, offset) as *const u64).add(index) }
+}
+
+/// Write a page-table entry at a physical table frame (through the window).
+///
+/// # Safety
+/// Same contract as [`read_p`]; $table_phys must be writable.
+#[cfg(target_os = "none")]
+unsafe fn table_write(table_phys: u64, offset: u64, index: usize, e: u64) {
+    // SAFETY: caller guarantees `table_phys` is a present, writable table.
+    unsafe { *(phys_to_virt(table_phys, offset) as *mut u64).add(index) = e }
+}
+
+/// PAGE_TAKEOVER — build the kernel's own PML4 (copying the bootloader's
+/// top level through the physical window) and load it into CR3. Returns the new
+/// physical CR3. After this, the kernel owns the page tables.
+///
+/// # Safety
+/// `offset` must be the valid physical window offset (from `BootInfo`). Must be
+/// called once, single-CPU, before any other map/unmap.
+#[cfg(target_os = "none")]
+pub unsafe fn takeover(offset: u64) -> Result<u64, MapError> {
+    // Record the window offset so later callers (heap, GDT) can map frames.
+    // SAFETY: single-CPU boot; PHYS_OFFSET set once here.
+    unsafe { PHYS_OFFSET = offset }
+
+    // 1. Allocate the kernel's own PML4 frame.
+    let frame = crate::frames::allocate_frame().ok_or(MapError::OutOfFrames)?;
+    let new_cr3 = frame * 4096;
+
+    // 2. Copy the bootloader's 512 top-level entries into ours. The top level
+    //    itself is written through the window. `current_cr3()` is the physical
+    //    address of the bootloader's PML4 — reachable via the window.
+    let old_cr3 = current_cr3() & ADDR_MASK;
+    for i in 0..512 {
+        let e = unsafe { table_read(old_cr3, offset, i) };
+        unsafe { table_write(new_cr3, offset, i, e) };
+    }
+
+    // 3. Switch CR3 to our new physical root (flushes the TLB).
+    // SAFETY: `new_cr3` is the physical address of a valid, present PML4 we
+    // just populated (it is a mirror of the bootloader's, so all live
+    // translations survive).
+    unsafe { crate::ffi::write_cr3(new_cr3) };
+    Ok(new_cr3)
+}
+
+/// Walk the CURRENT (post-takeover) tables and return the leaf PTE controlling
+/// `virt` (raw; callers check `PRESENT`). Reads through the physical window, so
+/// it works regardless of identity-mapping. 1 GiB / 2 MiB huge pages are passed
+/// through.
+///
+/// # Safety
+/// `offset` must be the window offset; tables reachable from `current_cr3()`
+/// must be valid.
+#[cfg(target_os = "none")]
+pub unsafe fn translate(offset: u64, virt: u64) -> u64 {
+    let pml4 = current_cr3() & ADDR_MASK;
+    let pml4e = unsafe { table_read(pml4, offset, index4(virt)) };
+    if pml4e & PRESENT == 0 {
+        return 0;
+    }
+    let pdpt = pml4e & ADDR_MASK;
+    let pdpte = unsafe { table_read(pdpt, offset, index3(virt)) };
+    if pdpte & PRESENT == 0 {
+        return 0;
+    }
+    if pdpte & (1 << 7) != 0 {
+        return pdpte;
+    }
+    let pd = pdpte & ADDR_MASK;
+    let pde = unsafe { table_read(pd, offset, index2(virt)) };
+    if pde & PRESENT == 0 {
+        return 0;
+    }
+    if pde & (1 << 7) != 0 {
+        return pde;
+    }
+    let pt = pde & ADDR_MASK;
+    unsafe { table_read(pt, offset, index1(virt)) }
+}
+
+/// Map a single 4 KiB frame at `virt` (writable; not user), allocating any
+/// intermediate table frames via `frames::`. Roots are the current CR3 (post-
+/// takeover). Returns `Err(OutOfFrames)` if a table page can't be allocated.
+///
+/// # Safety
+/// `offset` must be the window offset; `virt` must be page-aligned and not
+/// already mapped; the allocator must have spare frames.
+#[cfg(target_os = "none")]
+/// Allocate one physical frame, returning its PHYSICAL ADDRESS (frame * 4096),
+/// or `MapError::OutOfFrames` when exhausted.
+#[cfg(target_os = "none")]
+fn frame_phys() -> Result<u64, MapError> {
+    crate::frames::allocate_frame()
+        .map(|f| f * 4096)
+        .ok_or(MapError::OutOfFrames)
+}
+
+/// Zero a freshly-allocated table frame through the physical window.
+///
+/// # Safety
+/// `phys` must be a valid, writable, freshly-allocated frame; `offset` valid.
+#[cfg(target_os = "none")]
+unsafe fn zero_table(phys: u64, offset: u64) {
+    let v = phys_to_virt(phys, offset) as *mut u64;
+    for i in 0..512 {
+        // SAFETY: `phys` is a fresh writable frame mapped via the window.
+        unsafe { *v.add(i) = 0 };
+    }
+}
+
+/// Allocate a zeroed table frame and return its physical address.
+#[cfg(target_os = "none")]
+fn alloc_table(offset: u64) -> Result<u64, MapError> {
+    let p = frame_phys()?;
+    unsafe { zero_table(p, offset) };
+    Ok(p)
+}
+
+/// Map a single 4 KiB frame at `virt` (present + writable, not user), allocating
+/// any intermediate table frames via `frames::`. Roots are the current CR3
+/// (post-takeover). Returns `Err(OutOfFrames)` if a table page can't be made.
+///
+/// # Safety
+/// `offset` must be the window offset; `virt` must be page-aligned and not
+/// already mapped; the allocator must have spare frames.
+#[cfg(target_os = "none")]
+pub unsafe fn map_page(offset: u64, virt: u64, phys: u64) -> Result<(), MapError> {
+    let pml4 = current_cr3() & ADDR_MASK;
+
+    // Level 4 → PDPT.
+    let e4 = unsafe { table_read(pml4, offset, index4(virt)) };
+    let pdpt = if e4 & PRESENT != 0 {
+        e4 & ADDR_MASK
+    } else {
+        let t = alloc_table(offset)?;
+        unsafe { table_write(pml4, offset, index4(virt), entry_pointer(t, true, true)) };
+        t
+    };
+
+    // Level 3 → PD.
+    let e3 = unsafe { table_read(pdpt, offset, index3(virt)) };
+    let pd = if e3 & PRESENT != 0 {
+        e3 & ADDR_MASK
+    } else {
+        let t = alloc_table(offset)?;
+        unsafe { table_write(pdpt, offset, index3(virt), entry_pointer(t, true, true)) };
+        t
+    };
+
+    // Level 2 → PT.
+    let e2 = unsafe { table_read(pd, offset, index2(virt)) };
+    let pt = if e2 & PRESENT != 0 {
+        e2 & ADDR_MASK
+    } else {
+        let t = alloc_table(offset)?;
+        unsafe { table_write(pd, offset, index2(virt), entry_pointer(t, true, true)) };
+        t
+    };
+
+    // Leaf.
+    unsafe { table_write(pt, offset, index1(virt), entry_page(phys, true, true, false)) };
+    unsafe { crate::ffi::invlpg(virt) };
+    Ok(())
+}
+
+/// Find the lowest PML4 index whose entry is `PRESENT == 0` in the CURRENT
+/// post-takeover tables — a free 512 GiB region index usable for a fresh map.
+///
+/// # Safety
+/// `offset` must be the window offset; tables reachable from the live CR3.
+#[cfg(target_os = "none")]
+pub unsafe fn find_free_top_index(offset: u64) -> Option<usize> {
+    let pml4 = current_cr3() & ADDR_MASK;
+    for i in 0..512 {
+        let e = unsafe { table_read(pml4, offset, i) };
+        if e & PRESENT == 0 {
+            return Some(i);
+        }
+    }
+    None
+}
+
+/// Map `count` contiguous 4 KiB frames at contiguous virtual pages starting at
+/// `virt_base` (must be page-aligned). Frames are drawn from `frames::` and
+/// mapped present+writable. Used by the frame-backed heap to back the allocator.
+///
+/// # Safety
+/// `virt_base` must be page-aligned, in a region that is currently unmapped, and
+/// the allocator must have `count` spare frames.
+#[cfg(target_os = "none")]
+pub unsafe fn map_range(offset: u64, virt_base: u64, count: u64) -> Result<(), MapError> {
+    for i in 0..count {
+        let phys = frame_phys()?;
+        unsafe { map_page(offset, virt_base + i * 4096, phys) }?;
+    }
+    Ok(())
+}
 
 #[cfg(test)]
 mod tests {

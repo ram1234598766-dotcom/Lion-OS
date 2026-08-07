@@ -48,6 +48,25 @@ lion_read_cr3:
     ret
 .size lion_read_cr3,.-lion_read_cr3
 
+# void lion_write_cr3(uint64_t new_root) — load a new PML4 physical frame.
+#   SysV: rdi = new root. CR3 takes a PHYSICAL address. Moving to CR3 flushes
+#   the whole TLB, so no separate invlpg is needed for the takeover switch.
+.global lion_write_cr3
+.type lion_write_cr3,@function
+lion_write_cr3:
+    movq %rdi, %cr3
+    ret
+.size lion_write_cr3,.-lion_write_cr3
+
+# void lion_invlpg(uint64_t addr) — invalidate the TLB entry for one page.
+#   Needed after mapping/unmapping a page while CR3 stays loaded.
+.global lion_invlpg
+.type lion_invlpg,@function
+lion_invlpg:
+    invlpg (%rdi)
+    ret
+.size lion_invlpg,.-lion_invlpg
+
 # void lion_cpuid(uint32_t leaf, uint32_t subleaf, uint32_t out[4])
 #   SysV: rdi=leaf, rsi=subleaf, rdx=&out. Writes eax,ebx,ecx,edx into out[0..3].
 #

@@ -203,7 +203,7 @@ pub fn init() {
         let idt = &mut *core::ptr::addr_of_mut!(IDT);
         idt.set(0x00, divide_error as *const () as u64, 0);
         idt.set(0x06, invalid_opcode as *const () as u64, 0);
-        idt.set(0x08, double_fault as *const () as u64, 0); // IST1 added with the TSS+stack in M2W2
+        idt.set(0x08, double_fault as *const () as u64, 1); // IST1 → the dedicated double-fault stack (gdt::setup)
         idt.set(0x0D, general_protection_fault as *const () as u64, 0);
         idt.set(0x0E, page_fault as *const () as u64, 0);
 

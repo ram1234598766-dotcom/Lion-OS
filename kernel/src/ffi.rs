@@ -34,6 +34,8 @@ extern "C" {
     fn lion_sti();
     fn lion_pause();
     fn lion_read_cr3() -> u64;
+    fn lion_write_cr3(root: u64);
+    fn lion_invlpg(addr: u64);
     fn lion_cpuid(leaf: u32, subleaf: u32, out: *mut u32);
 
     // Assembly: CPU / MSR / port I/O / atomics (kernel/asm/cpu.s).
@@ -162,6 +164,27 @@ pub fn pause() {
 pub fn read_cr3() -> u64 {
     // SAFETY: mov cr3, rax is always safe to read.
     unsafe { lion_read_cr3() }
+}
+
+/// Load a new page-table root into `CR3`. `root` is a PHYSICAL frame address
+/// (CR3 takes physical, not virtual). Switching flushes the whole TLB.
+///
+/// # Safety
+/// `root` must be the physical address of a valid, present PML4 (typically one
+/// we just built and populated).
+pub unsafe fn write_cr3(root: u64) {
+    // SAFETY: caller upholds the physical-PML4 contract above.
+    unsafe { lion_write_cr3(root) }
+}
+
+/// Invalidate the TLB entries for the single page at `addr` (after a map/unmap
+/// while CR3 stays loaded).
+///
+/// # Safety
+/// `addr` must be a canonical virtual address.
+pub unsafe fn invlpg(addr: u64) {
+    // SAFETY: invlpg accepts any canonical address.
+    unsafe { lion_invlpg(addr) }
 }
 
 /// Execute `CPUID(leaf, subleaf)`, returning `[eax, ebx, ecx, edx]`.

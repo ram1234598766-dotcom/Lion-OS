@@ -87,7 +87,17 @@ jobs:
           grep -q "cmp=0" "$RUNNER_TEMP/boot-positive.log"                # C lionos_strcmp(a, a) == 0
           grep -q "hex=0x00000000deadbeef" "$RUNNER_TEMP/boot-positive.log" # C lionos_itoa_hex deterministic
           grep -q "LIONOS_C_MEMMOVE" "$RUNNER_TEMP/boot-positive.log"     # C lion_memmove overlap-safe
-          echo "PASS: handoff + fb + fmt + LIONOS_INIT_OK + C/asm + M2 IRQ + M2 heap + M2 frames + paging + NASM/C-str observed on serial"
+          # Month-2 paging TAKEOVER (M2W3c unblock): kernel owns CR3 (physical
+          # window mapping enabled in BootloaderConfig) and maps a frame.
+          grep -q "LIONOS_TAKEOVER cr3=" "$RUNNER_TEMP/boot-positive.log" # fresh kernel-owned PML4 at a physical frame
+          grep -q "LIONOS_CR3_NOW=" "$RUNNER_TEMP/boot-positive.log"      # confirmed the switch (CR3 -> our frame)
+          grep -q "owned=1" "$RUNNER_TEMP/boot-positive.log"              # current_cr3() == our new PML4
+          grep -q "LIONOS_MAP_RW back=deadbeefcafef00d" "$RUNNER_TEMP/boot-positive.log" # map/unmap round-trip
+          grep -q "phys_ok=1" "$RUNNER_TEMP/boot-positive.log"            # translate(pte) == the frame we mapped
+          # Month-2 GDT + TSS/IST: custom GDT installed with an IST0 double-fault
+          # stack (lgdt + ltr both succeeded, else the boot triple-faults here).
+          grep -q "LIONOS_GDT_OK ist0=" "$RUNNER_TEMP/boot-positive.log"  # 64-bit TSS with IST0 wired
+          echo "PASS: handoff + fb + fmt + LIONOS_INIT_OK + C/asm + M2 IRQ + M2 heap + M2 frames + paging takeover + GDT/TSS + NASM/C-str observed on serial"
 
       - name: Boot smoke test (negative — must FAIL when marker is wrong)
         working-directory: kernel

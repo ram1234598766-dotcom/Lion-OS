@@ -84,16 +84,103 @@ impl SegmentDescriptor {
 pub const KERNEL_CODE: u16 = 0x08;
 pub const KERNEL_DATA: u16 = 0x10;
 
-/// Number of entries in the kernel GDT (null + code + data).
+/// Selector for the 64-bit TSS (GDT index 3).
+pub const KERNEL_TSS: u16 = 0x18;
+
+/// Number of entries in the base kernel GDT (null + code + data).
 pub const GDT_ENTRIES: usize = 3;
 
-/// Build the kernel GDT table. Pure, `const`, host-testable.
+/// The 64-bit TSS structure the CPU uses for IST stack switching.
+///
+/// The important field for Month 2 is `ist` index 0, which the double-fault
+/// gate routes through (the double-fault handler then runs on its own stack, so
+/// a fault *inside* a handler no longer triple-faults into the same stack).
+#[derive(Debug, Clone, Copy)]
+#[repr(C)]
+pub struct TaskStateSegment {
+    reserved0: u32,
+    rsp0: u64,
+    rsp1: u64,
+    rsp2: u64,
+    reserved1: u64,
+    /// Interrupt Stack Table — 7 entries; IST0 is used by the double-fault gate.
+    ist: [u64; 7],
+    reserved2: u64,
+    reserved3: u16,
+    io_map_base: u16,
+}
+
+impl TaskStateSegment {
+    pub const fn new() -> Self {
+        TaskStateSegment {
+            reserved0: 0,
+            rsp0: 0,
+            rsp1: 0,
+            rsp2: 0,
+            reserved1: 0,
+            ist: [0; 7],
+            reserved2: 0,
+            reserved3: 0,
+            io_map_base: 0,
+        }
+    }
+
+    /// Set RSP0 (stack used on a privilege transition INTO ring 0). For a
+    /// single-ring kernel this is informational; the IST entry is the real use.
+    pub fn set_rsp0(&mut self, addr: u64) {
+        self.rsp0 = addr;
+    }
+
+    /// Set the IST0 stack top (used by the double-fault gate).
+    pub fn set_ist0(&mut self, top: u64) {
+        self.ist[0] = top;
+    }
+}
+
+/// Build the 3-entry kernel GDT (null + code + data). Pure, `const`, host-tested
+/// for the base descriptors. The kernel boot path uses a *superset* of this with
+/// the TSS appended (see [`setup`]).
 pub const fn build_gdt() -> [SegmentDescriptor; GDT_ENTRIES] {
     [
         SegmentDescriptor::null(),
         SegmentDescriptor::new_code64(),
         SegmentDescriptor::new_data64(),
     ]
+}
+
+/// A 64-bit TSS system descriptor (16 bytes = 2 GDT slots). Layout follows the
+/// SDM's long-mode system descriptor: slots 0..2 hold the low 16 bytes (limit,
+/// base[23:0], access, flags, base[31:24]); slots 3..5 hold base[63:32] +
+/// reserved. Only used on the kernel target (built fresh into a writable page).
+#[derive(Clone, Copy)]
+#[repr(C)]
+pub struct TssDescriptor {
+    limit_low: u16,
+    base_low: u16,
+    base_mid: u8,
+    access: u8,
+    flags: u8,
+    base_hi: u8,
+    base_upper: u32,
+    reserved: u32,
+}
+unsafe impl Sync for TssDescriptor {}
+
+impl TssDescriptor {
+    /// 64-bit "available" TSS: present, type 9 (0x89), base = `tss_base`.
+    pub fn available(tss_base: u64) -> Self {
+        let limit = core::mem::size_of::<TaskStateSegment>() - 1; // 103
+        TssDescriptor {
+            limit_low: limit as u16,
+            base_low: tss_base as u16,
+            base_mid: (tss_base >> 16) as u8,
+            access: 0x89, // present | available-64-bit-TSS
+            flags: 0x00,
+            base_hi: (tss_base >> 24) as u8,
+            base_upper: (tss_base >> 32) as u32,
+            reserved: 0,
+        }
+    }
 }
 
 /// GDTR pseudo-descriptor (limit + base) loaded by `lgdt`.
@@ -162,6 +249,93 @@ pub fn load() {
             options(nostack, preserves_flags)
         );
     }
+}
+
+/// Number of GDT slots with the TSS system descriptor appended (null, code64,
+/// data64, then the 2-slot 64-bit TSS descriptor).
+pub const GDT_TSS_ENTRIES: usize = 5;
+
+/// Kernel-only: install a full GDT with a 64-bit TSS (IST0) for the
+/// double-fault handler, on pages we own (mapped writable via `paging`).
+///
+/// This is the Month-2 W1 "writable GDT page" finish: the bootloader's kernel
+/// pages may be read-only (loading a segment writes the descriptor's *accessed*
+/// bit), so the GDT/TSS must live on frames we mapped writable ourselves.
+///
+/// Layout of the mapped region (3 contiguous 4 KiB frames at a fresh virtual
+/// base):
+///   [base + 0x0000]  GDT        — 5 slots (null, code, data, TSS lo, TSS hi)
+///   [base + 0x1000]  TSS        — 104-byte 64-bit TSS, IST0 set
+///   [base + 0x2000]  double-fault stack (top = base + 0x3000)
+///
+/// # Safety
+/// Must run after `paging::takeover` (so `paging::phys_offset` is live) and
+/// after `frames::init_frames`. Single CPU, interrupts disabled.
+#[cfg(target_os = "none")]
+pub unsafe fn setup() {
+    use crate::paging;
+
+    let offset = paging::phys_offset();
+    let idx = paging::find_free_top_index(offset).expect("no free region for GDT/TSS");
+    let mut base = (idx as u64) << 39;
+    if idx >= 256 {
+        base |= 0xFFFF_0000_0000_0000;
+    }
+    // 3 frames: GDT, TSS, double-fault stack.
+    // SAFETY: `base` is page-aligned, currently-unmapped; allocator has frames.
+    paging::map_range(offset, base, 3).expect("map GDT/TSS/stack frames");
+
+    let gdt_v = base as *mut u8;
+    let tss_v = (base + 0x1000) as *mut u64;
+    let ist_top = base + 0x3000; // top of the double-fault stack
+
+    // 1. TSS: zero it, set IST0 to the top of the double-fault stack.
+    // SAFETY: `tss_v` points to a mapped, writable frame.
+    core::ptr::write_bytes(tss_v as *mut u8, 0, 4096);
+    let tss = &mut *(tss_v as *mut TaskStateSegment);
+    tss.set_ist0(ist_top);
+
+    // 2. GDT: null, code64, data64, then the 2-slot TSS descriptor.
+    let gdt = build_gdt();
+    // SAFETY: `gdt_v` is mapped writable; copy 3 descriptors then 2 TSS slots.
+    core::ptr::copy_nonoverlapping(gdt.as_ptr() as *const u8, gdt_v, 3 * 8);
+    let tss_desc = TssDescriptor::available(base + 0x1000);
+    // TSS descriptor occupies GDT slots 3 and 4 (16 bytes).
+    core::ptr::copy_nonoverlapping(
+        (&tss_desc as *const TssDescriptor) as *const u8,
+        gdt_v.add(3 * 8),
+        core::mem::size_of::<TssDescriptor>(),
+    );
+
+    // 3. Load GDT, reload data segments, then load the TSS (ltr).
+    let limit = (GDT_TSS_ENTRIES * 8 - 1) as u16;
+    let mut gdtr = [0u8; 10];
+    gdtr[0] = limit as u8;
+    gdtr[1] = (limit >> 8) as u8;
+    gdtr[2..10].copy_from_slice(&base.to_le_bytes());
+    asm!("lgdt [{}]", in(reg) gdtr.as_ptr(), options(nostack, preserves_flags));
+
+    let sel = u16::from(KERNEL_DATA);
+    asm!(
+        "mov {r:x}, {sel:x}",
+        "mov ds, {r:x}",
+        "mov es, {r:x}",
+        "mov fs, {r:x}",
+        "mov gs, {r:x}",
+        r = out(reg) _,
+        sel = in(reg) sel,
+        options(nostack, preserves_flags)
+    );
+
+    // ltr to KERNEL_TSS — makes the CPU mark the TSS busy and enables IST.
+    // SAFETY: the TSS descriptor at slot 3 is valid and available.
+    asm!("ltr {0:x}", in(reg) u16::from(KERNEL_TSS), options(nostack, preserves_flags));
+
+    // Boot marker: GDT + TSS/IST installed (CI greps). IST0 = double-fault stack
+    // top; reaching this line means lgdt + ltr both succeeded.
+    crate::serial::write_str("LIONOS_GDT_OK ist0=");
+    crate::serial::write_hex(ist_top);
+    crate::serial::write_str("\r\n");
 }
 
 #[cfg(test)]

@@ -221,12 +221,13 @@ extern "x86-interrupt" fn keyboard_isr(_: crate::idt::InterruptStackFrame) {
 /// Must be called from boot context, once, before using the deferred queue.
 #[cfg(target_os = "none")]
 pub fn init() {
-    // Custom GDT deliberately deferred to M2W2 (memory manager): bootloader 0.11
-    // already provides flat CS=0x08/DS=0x10 segments + a busy TSS, and loading a
-    // segment makes the CPU write the descriptor's accessed bit — a write to the
-    // table, which must live in a page we control. The bootloader's flat
-    // segments are identical to what we'd install, so interrupts work now (IDT
-    // gates use selector 0x08) without a custom GDT.
+    // Custom GDT + TSS/IST, now that the page-table takeover lets us map a
+    // writable GDT page. `setup()` installs a 64-bit TSS with IST0 = a dedicated
+    // double-fault stack (frames mapped writable via paging), then loads GDT +
+    // ltr. Must run BEFORE `idt::init` so the double-fault gate can select IST1.
+    // SAFETY: called once, single CPU, interrupts disabled, after takeover.
+    unsafe { crate::gdt::setup() };
+
     crate::idt::init();
 
     // Wire the two real IRQ vectors (after `lidt`, so in-place gates go live).

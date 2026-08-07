@@ -207,35 +207,50 @@ unsafe impl GlobalAlloc for KernelAlloc {
     }
 }
 
-/// The kernel's global allocator; heap memory lives in `.bss` and is populated
-/// by [`init_heap`] at boot.
+/// The kernel's global allocator; heap memory is mapped from physical frames by
+/// [`init_heap`] at boot (post page-table takeover).
 #[cfg(target_os = "none")]
 #[global_allocator]
 pub static KERNEL_ALLOC: KernelAlloc = KernelAlloc(KernelHeap::empty());
 
-/// Heap capacity. `ponytail: a `static` in `.bss` — the kernel image (incl.
-/// bss) must not reach bootloader 0.11's page-table allocation zone, so this
-/// stays modest. Growing the heap from frames requires owning the page tables
-/// (the `paging` takeover), which is blocked by the bootloader's non-derivable
-/// virtual↔physical mapping for CR3 — a documented follow-up.
+/// Heap capacity. Now frame-backed: the takeover (see `paging::takeover`)
+/// unblocked mapping physical frames, so the heap no longer lives in the kernel
+/// image's `.bss` — it is drawn from the physical frame allocator and mapped at
+/// a free 512 GiB region. `ponytail: fixed 64 KiB arena; grow-on-demand (more
+/// mapped frames, resized arena) is a later-month increment.
 #[cfg(target_os = "none")]
 pub const HEAP_SIZE: usize = 64 * 1024;
 
-/// Heap backing store (64 KiB, zero-initialized → `.bss`, writable).
-#[cfg(target_os = "none")]
-static mut HEAP_SPACE: [u8; HEAP_SIZE] = [0; HEAP_SIZE];
-
-/// Initialize the global heap from `HEAP_SPACE`.
+/// Initialize the global heap from mapped physical frames.
+///
+/// Post-`paging::takeover`, picks a free 512 GiB virtual region, maps
+/// `HEAP_SIZE / 4096` frames into it, and inits the free-list allocator over
+/// that virtual range. This is the Month-2 payoff of owning the page tables:
+/// heap backing is real frame memory, not a baked-in `.bss` array.
 ///
 /// # Safety
-/// Call once at boot, before any heap allocation (interrupts can be enabled,
-/// but no ISR may allocate yet).
+/// Call once at boot, after `paging::takeover` and after `frames::init_frames`
+/// (so frames are available), before any heap allocation. Interrupts may be
+/// enabled, but no ISR may allocate yet.
 #[cfg(target_os = "none")]
 pub unsafe fn init_heap() {
-    let base = core::ptr::addr_of!(HEAP_SPACE) as usize;
+    let offset = crate::paging::phys_offset();
+    // Pick a free 512 GiB region for the heap's virtual base.
+    let idx = crate::paging::find_free_top_index(offset)
+        .expect("no free PML4 region for the heap");
+    // Make the address canonical: high-half region (idx >= 256) needs bits
+    // 48..63 set; low-half stays as-is.
+    let mut virt = (idx as u64) << 39;
+    if idx >= 256 {
+        virt |= 0xFFFF_0000_0000_0000;
+    }
+    let frames_needed = (HEAP_SIZE / 4096) as u64;
+    // SAFETY: `virt` is page-aligned in a currently-unmapped 512 GiB region;
+    // the allocator must have `frames_needed` spare frames (it does at boot).
+    crate::paging::map_range(offset, virt, frames_needed).expect("map heap frames");
     // SAFETY: single-CPU boot, called once; `init(&self)` writes via the
     // internal `UnsafeCell`, so a shared borrow of the static is sufficient.
-    KERNEL_ALLOC.0.init(base, HEAP_SIZE);
+    KERNEL_ALLOC.0.init(virt as usize, HEAP_SIZE);
 }
 
 #[cfg(test)]

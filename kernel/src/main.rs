@@ -16,9 +16,10 @@ extern crate alloc;
 use core::fmt::Write;
 use core::panic::PanicInfo;
 
+use bootloader_api::config::Mapping;
 use bootloader_api::entry_point;
 use bootloader_api::info::MemoryRegionKind;
-use bootloader_api::BootInfo;
+use bootloader_api::{BootInfo, BootloaderConfig};
 
 use alloc::boxed::Box;
 use alloc::vec::Vec;
@@ -136,6 +137,65 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
             }
 
             serial::write_raw(b"LIONOS_HANDOFF_OK\r\n");
+
+            // --- M2W3c: page-table takeover ---
+            // With `mappings.physical_memory` enabled, `BootInfo` exposes
+            // `physical_memory_offset` — a virt window over ALL physical memory.
+            // This unblocks owning the page tables: the kernel can now read/write
+            // any physical frame (incl. the bootloader's own table frames), so it
+            // can build its own PML4 and switch CR3 to a real physical root.
+            // Runs while IF=0 (before interrupts::init below), so no interrupt
+            // can fault through the window mid-switch.
+            match boot_info.physical_memory_offset.into_option() {
+                Some(offset) => match unsafe { paging::takeover(offset) } {
+                    Ok(new_cr3) => {
+                        serial::write_str("LIONOS_TAKEOVER cr3=");
+                        serial::write_hex(new_cr3);
+                        serial::write_str("\r\n");
+                        // Confirm the switch really took (CR3 now our frame).
+                        let cr3_now = paging::current_cr3() & paging::ADDR_MASK;
+                        serial::write_str("LIONOS_CR3_NOW=");
+                        serial::write_hex(cr3_now);
+                        serial::write_str(" owned=");
+                        serial::write_dec((cr3_now == new_cr3) as u64);
+                        serial::write_str("\r\n");
+
+                        // Map/unmap round-trip: allocate a data frame, map it at a
+                        // free 512 GiB region (canonical), write+read through the
+                        // virtual address, and translate it back to physical.
+                        if let Some(idx) = unsafe { paging::find_free_top_index(offset) } {
+                            // Make `virt` canonical: low half for idx<256, else
+                            // sign-extend bits 48..63.
+                            let mut virt = (idx as u64) << 39;
+                            if idx >= 256 {
+                                virt |= 0xFFFF_0000_0000_0000;
+                            }
+                            if let Some(dframe) = frames::allocate_frame() {
+                                let dphys = dframe * 4096;
+                                match unsafe { paging::map_page(offset, virt, dphys) } {
+                                    Ok(()) => {
+                                        // SAFETY: map_page just mapped `virt`
+                                        // present+writable at `dphys`.
+                                        unsafe { *(virt as *mut u64) = 0xDEAD_BEEF_CAFE_F00D };
+                                        let back = unsafe { *(virt as *const u64) };
+                                        let pte = unsafe { paging::translate(offset, virt) };
+                                        serial::write_str("LIONOS_MAP_RW back=");
+                                        serial::write_hex(back);
+                                        serial::write_str(" pte=");
+                                        serial::write_hex(pte);
+                                        serial::write_str(" phys_ok=");
+                                        serial::write_dec(((pte & paging::ADDR_MASK) == dphys) as u64);
+                                        serial::write_str("\r\n");
+                                    }
+                                    Err(_) => serial::write_str("LIONOS_MAP_ERR\r\n"),
+                                }
+                            }
+                        }
+                    }
+                    Err(_) => serial::write_str("LIONOS_TAKEOVER_ERR\r\n"),
+                },
+                None => serial::write_str("LIONOS_NO_PHYS_MAPPING\r\n"),
+            }
         }
         Err(e) => {
             serial::write_raw(b"LIONOS_MEM_MAP_ERROR code=");
@@ -420,7 +480,23 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
     }
 }
 
-entry_point!(kernel_main);
+// Bootloader config: enable the physical-memory mapping so `BootInfo`
+// exposes `physical_memory_offset` — the virt window over the whole physical
+// address space. This is the M2W3c unblock: it lets the kernel read/write any
+// physical frame (incl. the bootloader's own page-table frames, which are
+// otherwise NOT virt-accessible), so the kernel can build and switch to its
+// own page tables. `entry_point!(config = …)` is how a custom 0.11 config is
+// passed (the default `entry_point!(f)` is `config = new_default()`, which
+// leaves `physical_memory` = None — exactly why takeover was blocked).
+static BOOT_CONFIG: BootloaderConfig = {
+    // Mappings is #[non_exhaustive], so mutate the field on the default rather
+    // than building a literal.
+    let mut c = BootloaderConfig::new_default();
+    c.mappings.physical_memory = Some(Mapping::Dynamic);
+    c
+};
+
+entry_point!(kernel_main, config = &BOOT_CONFIG);
 
 #[panic_handler]
 fn panic(_info: &PanicInfo) -> ! {

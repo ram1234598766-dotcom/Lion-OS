@@ -42,12 +42,12 @@ functions are unit-tested on the host and fuzzed with `cargo-fuzz`.
 and `physical_memory_offset: Optional<u64>` (None with the default
 `BootloaderConfig`; only set if `mappings.physical_memory` is configured).
 
-The bootloader's page tables are the **boot provider's** for now (not ours):
-verified by attaching `gdb` to QEMU's `-s` stub and walking P4→PDPT→PD→PT. In
-the reference QEMU run: `CR3=0x1000`, and `0x100000` (virtual) → `0x401000`
-(physical, present), `.data` at `0x10c000` → `0x40d000` (present+writable).
-The kernel is identity-mapped at its link address; the bootloader places it at
-~`0x401000` physical and maps it 1:1.
+The bootloader's page tables are the **boot provider's** until the Month-2
+takeover: the kernel enables `mappings.physical_memory` in its
+`BootloaderConfig`, and `paging::takeover` then builds the kernel's **own** PML4
+(copying the bootloader's 512 top-level entries through the physical-memory
+window) and loads CR3 with its physical address. From then on the kernel owns
+the page tables (see §2).
 
 ### Mixed-language (C + assembly) support *(M1 refinement, deepened)*
 
@@ -152,7 +152,41 @@ Debug sections (`.debug_*`) have VMA 0 and are not loaded into memory. The
 canonical load base is the bootloader's decision; it currently places the
 kernel at ~`0x401000` physical and identity-maps it.
 
-## 2. Memory & CPU — *Month 2 (pending)*
+## 2. Memory & CPU — *Month 2 (shipped)*
+
+Month 2 brings the kernel's own CPU-core + memory primitives up behind `sti`.
+
+### Interrupts *(W1, W3 — shipped)*
+- **GDT + TSS/IST** (`gdt.rs`): after the paging takeover maps writable pages,
+  `gdt::setup()` installs a custom GDT (null / code64 / data64 / 64-bit TSS) and
+  `ltr`s the TSS. The TSS's `IST0` points at a dedicated double-fault stack, and
+  the IDT's double-fault gate (vector 0x08) selects IST1 — so a fault *inside* a
+  fault handler no longer triple-faults on the same stack. Boot marker:
+  `LIONOS_GDT_OK ist0=…`.
+- **IDT** (`idt.rs`): 256 gates; exception vectors 0x00/0x06/0x08/0x0D/0x0E print
+  structured diagnostics (`LIONOS_FAULT vector=…`, CR2 on #PF) instead of a
+  silent triple fault.
+- **8259 PIC remap + 8254 PIT + PS/2 keyboard** (`interrupts.rs`): IRQs become
+  IDT vectors 0x20..0x2F; timer (100 Hz) and keyboard ISRs do tiny work and push
+  to a bounded *deferred-work queue* drained from the idle loop. Boot markers:
+  `LIONOS_IRQ_FLAGS=…206` (IF=1), `LIONOS_TIMER_TICKS=25`, `LIONOS_IRQ_OK`.
+
+### Memory *(W2 — shipped)*
+- **Frame allocator** (`frames.rs`): free-list over validated *usable* regions,
+  floor at kernel `_end`; alloc/dealloc by frame number (accounting only).
+- **Paging takeover** (`paging.rs`, `LIONOS_TAKEOVER cr3=…`): the M2W3c unblock.
+  The kernel enables `mappings.physical_memory` in its `BootloaderConfig`
+  (`main.rs` `BOOT_CONFIG`), so `BootInfo.physical_memory_offset` exposes a
+  virtual window over the whole physical address space. `paging::takeover`
+  allocates the kernel's own PML4, copies the bootloader's 512 top-level entries
+  through that window, and loads CR3 with the new PML4's *physical* address —
+  the kernel now owns the page tables. `map_page`/`translate`/`map_range` build
+  new mappings (allocating intermediate table frames). Verified at boot:
+  `LIONOS_MAP_RW back=deadbeefcafef00d phys_ok=1` (map → write → read → translate).
+- **Heap** (`heap.rs`, `LIONOS_HEAP_OK cap=…`): a hand-rolled first-fit
+  free-list `#[global_allocator]`, now **frame-backed**: `init_heap` maps
+  `HEAP_SIZE` of physical frames at a fresh 512 GiB region (via `map_range`)
+  instead of a baked-in `.bss` array — the concrete payoff of owning paging.
 
 ## 3. Drivers & Filesystem — *Month 3 (pending)*
 
