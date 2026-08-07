@@ -1,6 +1,6 @@
 # LionOS
 
-[![License: MIT](https://img.shields.io/badge/license-MIT-brightgreen.svg)](LICENSE)
+[![License: All Rights Reserved](https://img.shields.io/badge/license-All%20Rights%20Reserved-lightgrey.svg)](LICENSE)
 [![Build Status](https://img.shields.io/github/actions/workflow/status/ram1234598766-dotcom/Lion-OS/ci.yml?branch=main&label=CI)](.github/workflows/ci.yml)
 [![Platform](https://img.shields.io/badge/platform-x86__64-blue.svg)](docs/ARCHITECTURE.md)
 [![Language](https://img.shields.io/badge/language-Rust%2FC%2Fasm-orange.svg)](kernel/)
@@ -1640,13 +1640,9 @@ No sponsorship program at this time.
 
 ## License
 
-This project is licensed under the **MIT License** — see the [LICENSE](LICENSE)
-file for details.
-
-```
-MIT License
-Copyright (c) 2026 Mrityunjay
-```
+This project is **All Rights Reserved** — proprietary and confidential. No
+permission is granted to copy, reuse, modify, distribute, sublicense, or sell
+any part of this work. See the [LICENSE](LICENSE) file for the full terms.
 
 ### Third-Party Licenses
 

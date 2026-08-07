@@ -81,5 +81,5 @@ jobs:
             org.opencontainers.image.source=https://github.com/${{ github.repository }}
             org.opencontainers.image.revision=${{ github.sha }}
             org.opencontainers.image.version=${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || 'latest' }}
-            org.opencontainers.image.licenses=MIT
+            org.opencontainers.image.licenses=All-Rights-Reserved
           platforms: linux/amd64
