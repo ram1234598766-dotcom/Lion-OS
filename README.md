@@ -13,9 +13,12 @@
 > A from-scratch operating system for x86_64, written in Rust with a C and
 > assembly support layer, that boots in a virtual machine with one command.
 
-> Built week-by-week against a six-month plan. Month 1 is complete: it boots a
-> real bootloader → kernel handoff inside QEMU, validates the memory map, and is
-> shipped as `v0.1.0`.
+> Built week-by-week against a six-month plan. Month 1 shipped (`v0.1.0`): it
+> boots a real bootloader → kernel handoff inside QEMU and validates the memory
+> map. **Month 2 shipped (`v0.2.0`):** the kernel now owns its CPU-core + memory
+> primitives — interrupts (IDT/PIC/PIT/keyboard), a frame-backed heap, the
+> **page-table takeover** (the kernel builds and switches to its own PML4), and
+> a custom GDT + TSS/IST with a double-fault stack.
 
 ---
 
@@ -170,6 +173,17 @@ unit-tested, and fuzzed.
       at boot and asserted in CI (`[ffi]` line)
 - [x] `v0.1.0` release + GHCR container image
 
+**Month 2 (shipped, `v0.2.0`):**
+- [x] Interrupt bring-up — 256-gate IDT, 8259 PIC remap, 8254 PIT timer,
+      PS/2 keyboard, bounded deferred-work queue
+- [x] Kernel heap (`#[global_allocator]`, first-fit free-list) — **frame-backed**
+      (mapped from physical frames via the page tables, not a baked `.bss` array)
+- [x] Physical frame allocator over the validated usable regions
+- [x] **Page-table takeover (M2W3c unblock):** kernel builds its own PML4 and
+      switches CR3 to it — CR3 is now the kernel's, not the bootloader's
+- [x] Custom GDT + 64-bit TSS/IST with a dedicated double-fault stack
+- [x] `v0.2.0` release + GHCR `lion:v0.2.0`
+
 ### In Progress
 
 - [x] Framebuffer (GOP) handoff — **shipped** (bootloader 0.11.17)
@@ -180,8 +194,8 @@ unit-tested, and fuzzed.
 
 ### Planned
 
-- [ ] Month 2 (in progress): IDT/PIC/timer/keyboard + heap + frame allocator done; paging-mapped heap growth + GDT/TSS next
-- [ ] Month 3: drivers, scheduler, read-only FAT32 filesystem
+- [ ] Month 3: drivers (serial spinlock, framebuffer bitmap-text), scheduler,
+      read-only FAT32 filesystem
 - [ ] Month 4: syscalls, ring separation, ELF loader, minimal shell
 - [ ] Month 5: graphics, compositor, wallpaper
 - [ ] Month 6: Path A (shell + AI stub) or Path B (hardening)
@@ -196,9 +210,12 @@ unit-tested, and fuzzed.
 | Launcher CLI (run/doctor/update) | ✅ | v0.1.0 | cross-platform |
 | Parser unit tests + fuzzing | ✅ | v0.1.0 | 16 tests, no crashes |
 | C + asm integration | ✅ | v0.1.0 | `[ffi]` boot diagnostic + CI |
-| GHCR container image | ✅ | v0.1.0 | `ghcr.io/.../lion:v0.1.0` |
-| Framebuffer (GOP) handoff | 🔧 | v0.2.0 | contract scaffolded |
-| Memory mgmt / heap / interrupts | 📋 | v0.2.0 | Month 2 |
+| GHCR container image | ✅ | v0.2.0 | `ghcr.io/.../lion:v0.2.0` |
+| Interrupts (IDT/PIC/PIT/keyboard) | ✅ | v0.2.0 | IRQ_FLAGS / TIMER_TICKS / IRQ_OK |
+| Frame-backed heap + frame allocator | ✅ | v0.2.0 | `#[global_allocator]`, HEAP_OK / FRAMES |
+| Page-table **takeover** (own PML4 + CR3) | ✅ | v0.2.0 | TAKEOVER cr3= … owned=1 |
+| GDT + TSS/IST (double-fault stack) | ✅ | v0.2.0 | GDT_OK ist0=… |
+| Framebuffer (GOP) handoff | 🔧 | v0.2.0 | drawing works; text/anim next |
 | Drivers / scheduler / FAT32 | 📋 | v0.3.0 | Month 3 |
 | Syscalls / user mode / shell | 📋 | v0.4.0 | Month 4 |
 | Graphics / compositor | 📋 | v0.5.0 | Month 5 |
@@ -432,7 +449,7 @@ LIONOS_INIT_OK
 ### Docker Alternative
 
 ```bash
-docker run --rm ghcr.io/ram1234598766-dotcom/lion-os/lion:v0.1.0
+docker run --rm ghcr.io/ram1234598766-dotcom/lion-os/lion:v0.2.0
 ```
 
 (Uses QEMU inside the container and streams serial output to the terminal.)
@@ -457,7 +474,7 @@ lionos run        # boots the kernel in QEMU
 ### Method 2 — Containers (GHCR)
 
 ```bash
-docker run --rm ghcr.io/ram1234598766-dotcom/lion-os/lion:v0.1.0
+docker run --rm ghcr.io/ram1234598766-dotcom/lion-os/lion:v0.2.0
 ```
 
 ### Method 3 — From source
@@ -825,8 +842,11 @@ at its link address; the bootloader's page-table root is `CR3 = 0x1000`.
 
 ### Virtual Memory Map
 
-Early boot is **identity-mapped** (virtual ≈ physical). Higher-half kernel
-mapping is a Month-1+ paging topic still owned by the bootloader.
+Early boot is identity-mapped by the bootloader. From the Month-2 **paging
+takeover** onward the kernel owns the page tables: `paging::takeover` builds its
+own PML4 (copying the bootloader's top level through the physical-memory
+window) and switches CR3 to it, and `map_page`/`map_range` add mappings (e.g.
+the frame-backed heap) at fresh virtual regions.
 
 | Start Address | Description |
 |---------------|-------------|
@@ -1061,13 +1081,18 @@ kernel integration.
 - [x] IDT + PIC remap + PIT timer + PS/2 keyboard + deferred work queue (boots; `LIONOS_IRQ_FLAGS`/`LIONOS_TIMER_TICKS`/`LIONOS_IRQ_OK`)
 - [x] Kernel heap: `#[global_allocator]` free-list allocator + accounting (boots; `LIONOS_HEAP_OK`, `Vec`/`Box` exercised)
 - [x] Physical frame allocator over validated usable regions (pure accounting; boots `LIONOS_FRAMES total=…`, alloc/free exercised)
-- [x] Page-table helpers + tests (`paging.rs`; boots `LIONOS_PML4 cr3=…`)
-- [ ] Paging: own the kernel's page tables — **blocked**: the bootloader's
-      virtual↔physical mapping isn't derivable for CR3; `BootInfo` exposes
-      `physical_memory_offset`/`kernel_image_offset` as the lead to unblock →
-      then grow the heap from frames
-- [ ] CPU init: custom GDT + TSS/IST (needs the kernel's own page tables)
-- [ ] QEMU integration tests (GDT/IDT, allocator stress, keyboard)
+- [x] Page-table helpers + tests (`paging.rs`)
+- [x] **Page-table takeover** — enable `mappings.physical_memory`, use
+      `physical_memory_offset` as a whole-physical-space window, build the
+      kernel's own PML4, and switch CR3 to its physical address (boots
+      `LIONOS_TAKEOVER cr3=… owned=1`, `LIONOS_MAP_RW … phys_ok=1`)
+- [x] Heap is frame-backed — mapped from physical frames into a fresh 512 GiB
+      region (`map_range`) instead of a baked `.bss` array
+- [x] CPU init: custom GDT + TSS/IST — dedicated double-fault stack via IST1
+      (boots `LIONOS_GDT_OK ist0=…`; ltr + double-fault gate IST1)
+- [ ] QEMU integration tests (GDT/IDT, allocator stress, keyboard) — CI already
+      gates the new paging/GDT markers; a deeper integration suite lands with
+      the Month-4 refinement week
 
 ### Version 0.3 — Scheduler, drivers, filesystem
 
@@ -1114,38 +1139,54 @@ kernel integration.
 
 ## Changelog
 
-### [Unreleased]
+### [v0.2.0] — Month 2
 
 #### Added
 
 - C + assembly integration into the kernel (`c/support.c`, `asm/cpu.s`,
   `build.rs`, `src/ffi.rs`), exercised at boot and asserted in CI.
 - `[ffi]` boot diagnostic (cr3/cpuid/memset/memcpy/vendor).
+- **Month 1 NASM + C string language lay** (`asm/port_io.asm`,
+  `cpu_utils.asm`, `c/string_utils.c`): the master-plan's NASM port-I/O/CPU-utils
+  routines + C string helpers, coexisting with the GAS layer. Markers
+  `LIONOS_NASM …`, `LIONOS_C_STR`, `LIONOS_C_MEMMOVE`. CI runner moved off the
+  retired `macos-13` to `macos-15-intel`.
 - **Month 2 interrupt bring-up:** 256-gate IDT (hand-rolled gates,
   `extern "x86-interrupt"` handlers, structured `LIONOS_FAULT` diagnostics),
   8259 PIC remap to vectors 0x20+, 8254 PIT timer (100 Hz), PS/2 keyboard
   IRQ, and a bounded deferred-work queue drained from the idle loop.
   Boot markers: `LIONOS_IRQ_FLAGS=…` (IF=1), `LIONOS_TIMER_TICKS=…`,
   `LIONOS_IRQ_OK`. CI asserts all three.
-- **Month 2 heap:** hand-rolled first-fit free-list allocator backing
-  `#[global_allocator]` (`Vec`/`Box`/`String` now work in the kernel), with
-  allocation accounting; 42 host unit tests. Boot marker `LIONOS_HEAP_OK
-  cap=… used=… sum=… box=…`; CI asserts the `Vec` sum + `Box` value.
+- **Month 2 heap (frame-backed):** hand-rolled first-fit free-list allocator
+  backing `#[global_allocator]` (`Vec`/`Box`/`String`). The arena is now drawn
+  from physical frames mapped into a fresh 512 GiB region (`paging::map_range`)
+  instead of a baked `.bss` array — the concrete payoff of owning the page
+  tables. Boot marker `LIONOS_HEAP_OK cap=… used=… sum=… box=…`.
 - **Month 2 frame allocator:** `kernel/src/frames.rs` — pure-accounting
   physical frame allocator over the validated usable regions (free-list of
   frame runs, split/merge, `_end`-based floor so kernel/bootloader frames are
-  never handed out); 49 host unit tests. Boot markers `LIONOS_FRAMES total=…`
-  and `LIONOS_FRAME_ALLOC phys=…`; CI asserts both.
-- **Month 2 paging foundation:** `kernel/src/paging.rs` — pure 4-level page-index
-  + PTE encoding helpers (53 host tests), CR3 register read at boot
-  (`LIONOS_PML4 cr3=…`). Established the constraint that bootloader 0.11 does
-  not map its own page-table frames, so a writable map requires building the
-  kernel's own page tables (the next increment).
+  never handed out). Boot markers `LIONOS_FRAMES total=…` and
+  `LIONOS_FRAME_ALLOC phys=…`.
+- **Month 2 paging foundation + TAKEOVER (the M2W3c unblock):**
+  `kernel/src/paging.rs` — 4-level page-index/PTE helpers, then
+  `takeover()`: the kernel enables `mappings.physical_memory` in its
+  `BootloaderConfig`, uses `BootInfo.physical_memory_offset` as a window over
+  the whole physical address space, builds its **own** PML4, and switches CR3 to
+  its physical address. `map_page` / `translate` / `map_range` map frames on
+  demand. Boot markers `LIONOS_TAKEOVER cr3=… owned=1` and
+  `LIONOS_MAP_RW back=deadbeefcafef00d phys_ok=1` (map → write → read → translate).
+- **Month 2 GDT + TSS/IST:** `gdt::setup()` installs a custom GDT + 64-bit TSS
+  with `IST0` = a dedicated double-fault stack (frames mapped writable via
+  paging); `ltr` loads the TSS and the IDT double-fault gate (0x08) selects
+  IST1 — a fault inside a fault handler now runs on its own stack. Boot marker
+  `LIONOS_GDT_OK ist0=…`.
 
 #### Fixed
 
 - `cpuid` stub destroyed the `%rdx` `out` pointer (CPUID clobbers `EDX`) —
   triple-fault; staged the base in `%r8`.
+- The boilerplate's `cpuid_query` had the same EDX-clobber bug — not copied
+  verbatim; parked `&eax`/`&ebx` in `r10`/`r11` before `cpuid`.
 
 ### [v0.1.0] — Month 1
 
