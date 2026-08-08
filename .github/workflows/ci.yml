@@ -112,7 +112,15 @@ jobs:
           # second-drive integration boot elsewhere in this workflow.
           grep -q "LIONOS_DRV_IDE disks=" "$RUNNER_TEMP/boot-positive.log" # ATA PIO probe ran
           grep -q "LIONOS_FS_NONE_MOUNTED" "$RUNNER_TEMP/boot-positive.log" # no FAT volume -> honest reject
-          echo "PASS: handoff + fb + fmt + LIONOS_INIT_OK + C/asm + M2 IRQ + M2 heap + M2 frames + paging takeover + GDT/TSS + NASM/C-str + M3 driver layer + M3 ATA/FS observed on serial"
+          # M3 Task-4 driver set (QEMU i440fx exposes an e1000 NIC + an I/O APIC by
+          # default, so these are real FOUNDs; the rest report ABSENT — never fault).
+          grep -q "LIONOS_DRV_E1000 found=1" "$RUNNER_TEMP/boot-positive.log" # e1000 NIC detected
+          grep -q "LIONOS_DRV_IOAPIC found=1" "$RUNNER_TEMP/boot-positive.log" # I/O APIC enumerated
+          grep -q "LIONOS_DRV_HPET ABSENT" "$RUNNER_TEMP/boot-positive.log"  # HPET honest absent (not on i440fx)
+          grep -q "LIONOS_SCHED tasks=" "$RUNNER_TEMP/boot-positive.log"      # cooperative + PIT scheduler woke
+          grep -q "LIONOS_CPP magic=" "$RUNNER_TEMP/boot-positive.log"        # C++17 object linked + ran
+          grep -q "LIONOS_ZIG magic=" "$RUNNER_TEMP/boot-positive.log"        # Zig object linked + ran
+          echo "PASS: handoff + fb + fmt + LIONOS_INIT_OK + C/asm + M2 IRQ + M2 heap + M2 frames + paging takeover + GDT/TSS + NASM/C-str + M3 driver layer + M3 ATA/FS + M3 Task-4 driver set observed on serial"
 
       - name: Boot smoke test (read-only FAT32 over ATA PIO second drive)
         working-directory: os

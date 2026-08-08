@@ -22,15 +22,24 @@
 //! Month-6 AI assistant. It exercises device-init + policy code, and the
 //! matching function is real, host-tested logic.
 
+pub mod ahci;
+pub mod e1000;
+pub mod ehci;
 pub mod face_id;
 pub mod fbtext;
 pub mod font5x7;
+pub mod hpet;
 pub mod ide;
+pub mod ioapic;
 pub mod keyboard;
 pub mod mouse;
+pub mod nvme;
 pub mod pci;
+pub mod rtl8139;
 pub mod rtc;
 pub mod speaker;
+pub mod uhci;
+pub mod vbe;
 pub mod vga;
 pub mod virtio_blk;
 
@@ -172,4 +181,17 @@ pub fn init_all() {
             serial::write_str("LIONOS_FS_NONE_MOUNTED\r\n");
         }
     }
+
+    // --- Task 4: the remaining real-standard driver set (each detect-only,
+    // found/absent marker — see the per-driver module docs). Order follows the
+    // plan: storage first (AHCI/NVMe), then net/USB/timer/APIC/gfx.
+    ahci::init();
+    nvme::init();
+    e1000::init();
+    rtl8139::init();
+    uhci::init();
+    ehci::init();
+    hpet::init();
+    ioapic::init();
+    vbe::init();
 }
