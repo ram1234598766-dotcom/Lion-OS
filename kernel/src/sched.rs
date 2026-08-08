@@ -160,10 +160,13 @@ static PIT_KICKS: core::sync::atomic::AtomicU64 = core::sync::atomic::AtomicU64:
 pub extern "C" fn task_entry() -> ! {
     let f = unsafe { *core::ptr::addr_of!(TASK_FN) };
     if let Some(f) = f { f(); }
+    // Park: consume PIT kicks and perform deferred switches. A busy `pause`
+    // loop here (not `hlt`) — under the deferred-switch model a task must keep
+    // pumping the ring or it stalls with no way back to the idle slot.
     loop {
         pump_ticks();
         run_pending_switch();
-        crate::ffi::hlt();
+        crate::ffi::pause();
     }
 }
 

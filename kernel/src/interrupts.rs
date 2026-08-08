@@ -205,8 +205,7 @@ pub fn run_deferred() {
 #[cfg(target_os = "none")]
 extern "x86-interrupt" fn timer_isr(_: crate::idt::InterruptStackFrame) {
     TICKS.fetch_add(1, Ordering::SeqCst);
-    // Month-3 scheduler: advance RR + flag a pending switch (deferred to the
-    // main loop — no register switch happens inside this ISR).
+    // Month-3 scheduler: defer the advance + switch to the parking loop.
     crate::sched::on_timer_irq();
     eoi(0);
 }
