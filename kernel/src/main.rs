@@ -426,6 +426,16 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
     serial::write_hex(u64::from(u32::from_le_bytes([mem[0], mem[1], mem[2], mem[3]])));
     serial::write_str("\r\n");
 
+    // C++17 + Zig language-lay smoke (Month 3). Deterministic magic constants
+    // prove both new objects linked into liblionos_ffi.a and ran.
+    serial::write_str("LIONOS_CPP magic=");
+    serial::write_hex(ffi::cpp_magic() as u64);
+    serial::write_str(" LIONOS_ZIG magic=");
+    serial::write_hex(ffi::zig_magic() as u64);
+    serial::write_str(" table=");
+    serial::write_hex(ffi::zig_table_magic() as u64);
+    serial::write_str("\r\n");
+
     // Week-1 CI checkpoint preserved regardless of the handoff result.
     serial::write_raw(boot_marker().as_bytes());
     serial::write_raw(b"\r\n");

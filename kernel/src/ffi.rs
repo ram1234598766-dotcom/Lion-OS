@@ -446,3 +446,34 @@ pub unsafe fn memmove(dst: *mut u8, src: *const u8, len: usize) -> *mut u8 {
     // SAFETY: forwarded from the caller's buffer contract.
     unsafe { lion_memmove(dst, src, len) }
 }
+
+// =============================================================================
+// C++17 + Zig (Month-3 language lay ILLUSTRATIONS). These are the two added
+// language families in the kernel, linked by `build.rs` into `liblionos_ffi.a`
+// for the kernel target. They return deterministic magic constants so a boot-
+// smoke marker proves both objects actually linked and ran.
+// =============================================================================
+
+extern "C" {
+    fn lionos_cpp_magic() -> u32;
+    fn lionos_zig_magic() -> u32;
+    fn lionos_zig_table_magic() -> u32;
+}
+
+/// C++17 `lionos_cpp_magic` (kernel/cpp/lionos_cpp.cpp) → 0xC0FFEE0C.
+pub fn cpp_magic() -> u32 {
+    // SAFETY: pure register-return extern; no state, no arguments.
+    unsafe { lionos_cpp_magic() }
+}
+
+/// Zig `lionos_zig_magic` (kernel/zig/lionos_zig.zig) → 0x00000944.
+pub fn zig_magic() -> u32 {
+    // SAFETY: pure register-return extern call; no state.
+    unsafe { lionos_zig_magic() }
+}
+
+/// Zig `lionos_zig_table_magic` — the comptime-validated hardware table's magic.
+pub fn zig_table_magic() -> u32 {
+    // SAFETY: pure register-return extern call; no state.
+    unsafe { lionos_zig_table_magic() }
+}

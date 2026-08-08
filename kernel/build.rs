@@ -52,6 +52,50 @@ fn compile(cc: &str, src: &str, obj: &PathBuf) {
     assert!(status.success(), "compiling {src} failed");
 }
 
+/// Compile one C++17 source into an object. Same flag contract as `compile`
+/// (freestanding, kernel addressing, no PIE), with the C++ runtime cuts
+/// (no exceptions/RTTI/threadsafe-statics) so the link stays freelibstdc++.
+fn compile_cxx(cc: &str, src: &str, obj: &PathBuf) {
+    let status = std::process::Command::new(cc)
+        .args([
+            "-m64",
+            "-O2",
+            "-std=c++17",
+            "-fno-pie",
+            "-ffreestanding",
+            "-fno-exceptions",
+            "-fno-rtti",
+            "-fno-threadsafe-statics",
+            "-fno-builtin",
+            "-fno-stack-protector",
+            "-mno-red-zone",
+            "-mcmodel=kernel",
+            "-nostdlib",
+            "-nostdinc",
+            "-c",
+            src,
+            "-o",
+            obj.to_str().unwrap(),
+        ])
+        .status()
+        .expect("failed to spawn the C++ compiler (CC must be g++ for a .cpp suffix)");
+    assert!(status.success(), "compiling {src} (C++) failed");
+}
+
+/// Build one Zig source into a freestanding ELF64 object via `zig build-obj`.
+/// `build-obj` emits a bare object (C-ABI `@export` symbols, no std OS deps),
+/// the same object contract C/GAS/NASM produce for `link_ffi`.
+fn build_zig(zig: &str, src: &str, obj: &PathBuf) {
+    // `-femit-bin` must be `=`-attached (Zig does not accept a separate path
+    // arg here), pointing at an absolute OUT_DIR object path.
+    let emit = format!("-femit-bin={}", obj.to_str().unwrap());
+    let status = std::process::Command::new(zig)
+        .args(["build-obj", src, "-O", "ReleaseSafe", &emit])
+        .status()
+        .expect("failed to spawn Zig (is `zig` on PATH? set ZIG=<path>)");
+    assert!(status.success(), "zig build-obj {src} failed");
+}
+
 /// Assemble one NASM source into an ELF64 object for the freestanding kernel.
 fn assemble_nasm(nasm: &str, src: &str, obj: &PathBuf) {
     let status = std::process::Command::new(nasm)
@@ -87,6 +131,8 @@ fn main() {
     println!("cargo:rerun-if-changed=asm/cpu.s");
     println!("cargo:rerun-if-changed=asm/port_io.asm");
     println!("cargo:rerun-if-changed=asm/cpu_utils.asm");
+    println!("cargo:rerun-if-changed=cpp/lionos_cpp.cpp");
+    println!("cargo:rerun-if-changed=zig/lionos_zig.zig");
 
     // The FFI objects exist only for the freestanding kernel target; host-side
     // test builds must not try to compile them (no kernel compiler contract).
@@ -103,6 +149,7 @@ fn main() {
 
     let cc = std::env::var("CC").unwrap_or_else(|_| "cc".to_string());
     let nasm = std::env::var("NASM").unwrap_or_else(|_| "nasm".to_string());
+    let zig = std::env::var("ZIG").unwrap_or_else(|_| "zig".to_string());
     let out = PathBuf::from(std::env::var_os("OUT_DIR").expect("OUT_DIR"));
 
     let mut objects = Vec::new();
@@ -126,6 +173,17 @@ fn main() {
         assemble_nasm(&nasm, src, &obj);
         objects.push(obj);
     }
+    // C++17 + Zig (the Month-3 language lay extension).
+    // NOTE: `compile_cxx` is invoked with the C compiler driver (gcc/g++); a
+    // `.cpp` source makes gcc invoke the C++ frontend regardless of the binary's
+    // basename. Zig is invoked via `zig build-obj` (C-ABI export, freestanding).
+    let cpp_obj = out.join("cpp_lionos.o");
+    compile_cxx(&cc, "cpp/lionos_cpp.cpp", &cpp_obj);
+    objects.push(cpp_obj);
+
+    let zig_obj = out.join("zig_lionos.o");
+    build_zig(&zig, "zig/lionos_zig.zig", &zig_obj);
+    objects.push(zig_obj);
 
     link_ffi(&objects, &out);
 }
