@@ -31,11 +31,29 @@ use lionos_kernel::heap;
 use lionos_kernel::interrupts;
 use lionos_kernel::memory::{self, Region, RegionKind};
 use lionos_kernel::paging;
+use lionos_kernel::sched;
 use lionos_kernel::serial;
 
 extern "C" {
     /// End of the kernel image (linker.ld `_end`) — the frame allocator's floor.
     static _end: u8;
+}
+
+// --- Month-3 scheduler self-test (module scope; `static`/`fn` can't be item
+// bodies). Three tasks share this one busy-counting closure; each runs it on
+// its own stack and the PIT preempts mid-count, so ROTATIONS grows across all
+// three — the interleave proof behind the LIONOS_SCHED marker.
+static mut ROTATIONS: u64 = 0;
+
+fn task_closure() {
+    // SAFETY: single-CPU boot; only tasks touch ROTATIONS, all single-threaded.
+    let mut t = 0u64;
+    for _ in 0..100_000 {
+        t = t.wrapping_add(1);
+        // Volatile store to the shared counter via a raw pointer (dodges the
+        // static_mut_refs lint); each task folds into the same ROTATIONS.
+        unsafe { core::ptr::write_volatile(core::ptr::addr_of_mut!(ROTATIONS), t) };
+    }
 }
 
 /// Boot marker printed to COM1 on success. CI greps for this exact string.
@@ -510,10 +528,36 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
     // interrupts are up (mouse ISR + PIC unmask are in interrupts::init).
     lionos_kernel::drivers::init_all();
 
-    loop {
-        interrupts::run_deferred();
-        ffi::hlt();
+    // --- Month 3: scheduler ---
+    // Three tasks share ONE busy-counting closure (`task_closure`, module
+    // scope); each runs it on its own stack, and the PIT preempts mid-count so
+    // the shared ROTATIONS counter grows across all three — the interleave.
+    sched::spawn(task_closure);
+    sched::spawn(task_closure);
+    sched::spawn(task_closure);
+    // Close the ring (append the IDLE slot so the scheduler returns control to
+    // the boot context), then convert PIT kicks into selection and switch.
+    sched::finish();
+
+    let mut spins = 0u64;
+    while sched::switches() < 4 && spins < 500_000_000 {
+        sched::pump_ticks();
+        sched::run_pending_switch();
+        ffi::pause();
+        spins += 1;
     }
+    serial::write_str("LIONOS_SCHED tasks=");
+    serial::write_dec(sched::task_count() as u64);
+    serial::write_str(" switches=");
+    serial::write_dec(sched::switches());
+    // SAFETY: single CPU boot; ROTATIONS is only written from tasks, all single-
+    // threaded here.
+    serial::write_str(" rot=");
+    serial::write_dec(unsafe { ROTATIONS });
+    serial::write_str("\r\n");
+
+    // Park the boot context as the scheduler's idle loop (switches on timer ticks).
+    sched::idle_loop();
 }
 
 // Bootloader config: enable the physical-memory mapping so `BootInfo`

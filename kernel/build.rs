@@ -131,6 +131,7 @@ fn main() {
     println!("cargo:rerun-if-changed=asm/cpu.s");
     println!("cargo:rerun-if-changed=asm/port_io.asm");
     println!("cargo:rerun-if-changed=asm/cpu_utils.asm");
+    println!("cargo:rerun-if-changed=asm/switch.asm");
     println!("cargo:rerun-if-changed=cpp/lionos_cpp.cpp");
     println!("cargo:rerun-if-changed=zig/lionos_zig.zig");
 
@@ -168,6 +169,7 @@ fn main() {
     for (name, src) in [
         ("port_io", "asm/port_io.asm"),
         ("cpu_utils", "asm/cpu_utils.asm"),
+        ("context_switch", "asm/switch.asm"),
     ] {
         let obj = out.join(format!("{name}.o"));
         assemble_nasm(&nasm, src, &obj);

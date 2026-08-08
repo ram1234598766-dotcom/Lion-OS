@@ -33,5 +33,6 @@ pub mod idt;
 pub mod interrupts;
 pub mod memory;
 pub mod paging;
+pub mod sched;
 pub mod serial;
 pub mod spinlock;
