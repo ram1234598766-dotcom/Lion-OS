@@ -27,6 +27,42 @@ pub fn write32(phys: u64, value: u32) {
     unsafe { core::ptr::write_volatile((phys + off) as *mut u32, value) }
 }
 
+/// Read an 8-bit MMIO register (byte) at physical `phys` through the window.
+#[cfg(target_os = "none")]
+pub fn read8(phys: u64) -> u8 {
+    let off = paging::phys_offset();
+    if off == 0 { return 0; }
+    // SAFETY: phys window maps all physical memory; caller passes a register.
+    unsafe { core::ptr::read_volatile((phys + off) as *const u8) }
+}
+
+/// Read a 16-bit MMIO register at physical `phys` through the window.
+#[cfg(target_os = "none")]
+pub fn read16(phys: u64) -> u16 {
+    let off = paging::phys_offset();
+    if off == 0 { return 0; }
+    // SAFETY: as above.
+    unsafe { core::ptr::read_volatile((phys + off) as *const u16) }
+}
+
+/// Write an 8-bit MMIO register at physical `phys` through the window.
+#[cfg(target_os = "none")]
+pub fn write8(phys: u64, value: u8) {
+    let off = paging::phys_offset();
+    if off == 0 { return; }
+    // SAFETY: caller passes a writable register.
+    unsafe { core::ptr::write_volatile((phys + off) as *mut u8, value) }
+}
+
+/// Write a 16-bit MMIO register at physical `phys` through the window.
+#[cfg(target_os = "none")]
+pub fn write16(phys: u64, value: u16) {
+    let off = paging::phys_offset();
+    if off == 0 { return; }
+    // SAFETY: caller passes a writable 16-bit register.
+    unsafe { core::ptr::write_volatile((phys + off) as *mut u16, value) }
+}
+
 /// Read an 8-bit I/O port (NASM `inb`).
 #[cfg(target_os = "none")]
 pub fn inb(port: u16) -> u8 {

@@ -45,6 +45,7 @@ pub mod vga;
 pub mod virtio_blk;
 
 use crate::fs;
+use crate::fs::BlockDevice;
 use crate::serial;
 
 /// Run every driver's init and print a consolidated marker line. Boot-time,
@@ -110,15 +111,55 @@ pub fn init_all() {
     // --- disk layer: ATA PIO + virtio-blk detect + read-only FAT32 ---
     // ATA is the real PIO block transport this month; virtio is detect-only
     // until the virtqueue ring lands. Absence is reported, never faulted.
-    let virtio = virtio_blk::VirtioBlk::probe();
-    match &virtio {
+    // virtio-blk: real virtqueue — negotiate, queue up, and drive read-only
+    // FAT32 over it when a device is present. Absence is never faulted.
+    match virtio_blk::VirtioBlk::probe() {
         Some(v) => {
-            serial::write_str("LIONOS_DRV_VIRTIO found pci=");
-            serial::write_hex(u64::from((v.pci.vendor as u32) << 16 | v.pci.device as u32));
+            serial::write_str("LIONOS_DRV_VIRTIO found=1\r\n");
+            match fs::Fs::mount(&v) {
+                Ok(f) => {
+                    serial::write_str("LIONOS_FS_VIRTIO_OK\r\n");
+                    let mut entries = alloc::vec::Vec::new();
+                    if f.ls(&v, &mut entries) {
+                        serial::write_str("LIONOS_FS_VIRTIO_LS count=");
+                        serial::write_dec(entries.len() as u64);
+                        serial::write_str(" [");
+                        for (i, e) in entries.iter().enumerate() {
+                            if i > 0 { serial::write_str(", "); }
+                            serial::write_str(&e.display_name());
+                        }
+                        serial::write_str("]\r\n");
+                        if let Some(e0) = entries.iter().find(|e| !e.is_dir) {
+                            let mut got = alloc::vec::Vec::new();
+                            if f.read_path(&v, &e0.display_name(), &mut got) {
+                                serial::write_str("LIONOS_FS_VIRTIO_READ name=");
+                                serial::write_str(&e0.display_name());
+                                serial::write_str(" bytes=");
+                                serial::write_dec(got.len() as u64);
+                                serial::write_str("\r\n");
+                            } else {
+                                serial::write_str("LIONOS_FS_VIRTIO_READ_ERR\r\n");
+                            }
+                        }
+                    }
+                }
+                Err(_) => {
+                    // Diagnose a failed mount: does the virtqueue even deliver
+                    // sector 0? Print read success + first bytes + the 0x55AA sig.
+                    serial::write_str("LIONOS_FS_VIRTIO_BAD_BPB read=");
+                    let mut buf512 = [0u8; 512];
+                    let okr = v.read_sector(0, &mut buf512);
+                    serial::write_dec(okr as u64);
+                    serial::write_str(" b00=");
+                    serial::write_hex(u64::from(u32::from_le_bytes([buf512[0], buf512[1], buf512[2], buf512[3]])));
+                    serial::write_str(" sig=");
+                    serial::write_hex(u64::from(u32::from_le_bytes([buf512[510], buf512[511], 0u8, 0u8])));
+                    serial::write_str("\r\n");
+                }
+            }
         }
-        None => serial::write_str("LIONOS_DRV_VIRTIO ABSENT"),
+        None => serial::write_str("LIONOS_DRV_VIRTIO ABSENT\r\n"),
     }
-    serial::write_str("\r\n");
 
     let disks = ide::probe_all();
     if disks.is_empty() {
