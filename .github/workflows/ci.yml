@@ -239,10 +239,16 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install QEMU + NASM
-        # NASM is needed because os/ builds the kernel (which assembles the
-        # NASM sources) as a build artifact.
-        run: sudo apt-get update && sudo apt-get install -y qemu-system-x86 nasm
+      - name: Install QEMU + NASM + Zig 0.14 + g++
+        # os/ rebuilds the kernel as a build artifact, which assembles NASM,
+        # compiles C++17 (g++ frontend) and Zig (`zig build-obj`), so all are
+        # required here too.
+        run: |
+          sudo apt-get update && sudo apt-get install -y qemu-system-x86 nasm g++ build-essential
+          curl -sL -o /tmp/zig.tar.xz https://ziglang.org/download/0.14.0/zig-linux-x86_64-0.14.0.tar.xz
+          sudo mkdir -p /opt/zig && sudo tar -xf /tmp/zig.tar.xz -C /opt/zig --strip-components=1
+          sudo ln -sf /opt/zig/zig /usr/local/bin/zig
+          zig version
 
       - name: Install pinned nightly + build boot image
         uses: dtolnay/rust-toolchain@stable
