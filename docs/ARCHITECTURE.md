@@ -215,8 +215,28 @@ CI can assert it initialized.
   camera/ML on QEMU, so it exercises the real driver boundary + access policy
   (enroll a descriptor → `verify`/`gate`), clearly labeled a mock (same
   convention as the plan's Month-6 AI stub). Matching logic is host-tested.
+- **Disk** (`drivers/ide.rs`) — ATA-1 PIO block driver on 0x1F0/0x170:
+  `probe_all()` enumerates both channels, LBA-28 `read_sector` implements
+  `fs::BlockDevice`; pure geometry (`lba28_capacity`, `drive_reg`) is
+  host-tested. Marker `LIONOS_DRV_IDE disks=…`.
+- **Virtio-blk** (`drivers/virtio_blk.rs`) — PCI detect shim (vendor 0x1AF4,
+  ids 0x1001/0x1041). Marker `LIONOS_DRV_VIRTIO`.
+- **Task-4 detect set** (each: pure host-tested core + `#[cfg(none)]` probe +
+  `LIONOS_DRV_*` marker, never faults): AHCI (`ahci.rs`), NVMe (`nvme.rs`),
+  e1000 (`e1000.rs`), RTL8139 (`rtl8139.rs`), UHCI (`uhci.rs`), EHCI
+  (`ehci.rs`), HPET MMIO @0xFED00000 (`hpet.rs`), I/O APIC MMIO @0xFEC00000
+  (`ioapic.rs`), Bochs-VBE via ports 0x1CE/0x1CF (`vbe.rs`).
 
-Scheduler + read-only FAT32 are the rest of Month 3 (pending).
+**Scheduler + filesystem (also shipped in Month 3):**
+- **Scheduler** (`sched.rs` + `asm/switch.asm`) — PCB ring with an in-ring idle
+  slot; cooperative `yield_` + PIT-preemptive round-robin via a NASM
+  callee-saved context switch; task stacks are heap-allocated. Marker
+  `LIONOS_SCHED tasks=… switches=…`.
+- **Read-only FAT32** (`fs.rs`) — `parse_boot` BPB validator (pure, host-tested)
+  → `Fs{mount,ls,find,read}` over the `BlockDevice` trait. Root-directory walk
+  reads the FAT32 dir-entry cluster as (hi word @20 | lo word @26); `read_file`
+  follows the cluster chain. Verified against a real mtools image on a second
+  ATA drive (`LIONOS_FS_OK` / `LIONOS_FS_LS` / `LIONOS_FS_READ`, byte-identical).
 
 ## 4. Userland & Syscalls — *Month 4 (pending)*
 

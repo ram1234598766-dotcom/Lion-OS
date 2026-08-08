@@ -18,7 +18,17 @@
 > map. **Month 2 shipped (`v0.2.0`):** the kernel now owns its CPU-core + memory
 > primitives — interrupts (IDT/PIC/PIT/keyboard), a frame-backed heap, the
 > **page-table takeover** (the kernel builds and switches to its own PML4), and
-> a custom GDT + TSS/IST with a double-fault stack.
+> a custom GDT + TSS/IST with a double-fault stack. **Month 3 shipped (`v0.3.0`):**
+> a real driver layer (serial/framebuffer/text + keyboard/mouse/RTC/PCI/VGA/
+> speaker + **10+ real standards: ATA PIO disk, AHCI/NVMe/e1000/RTL8139/UHCI/
+> EHCI/HPET/IOAPIC/Bochs-VBE detect**), a cooperative → **preemptive scheduler**
+> driven by the PIT, and a **read-only FAT32** filesystem over real block I/O —
+> with C++17 and Zig joined to the FFI language lay.
+>
+> **Honest platform note:** this is the **x86_64 (Track PC)** line, booting under
+> QEMU — UEFI/real-PC boot and the **Android/arm64 (Track A)** target are
+> future, not shipped (see [`docs/android.md`](docs/android.md) for the real
+> status).
 
 ---
 
@@ -184,6 +194,21 @@ unit-tested, and fuzzed.
 - [x] Custom GDT + 64-bit TSS/IST with a dedicated double-fault stack
 - [x] `v0.2.0` release + GHCR `lion:v0.2.0`
 
+**Month 3 (shipped, `v0.3.0`):**
+- [x] Mixed-language: **C++17 + Zig** join the FFI (`liblionos_ffi.a`), magic
+      smoke markers `LIONOS_CPP`/`LIONOS_ZIG` boot-verified
+- [x] **Scheduler** — cooperative yield + **PIT-driven preemptive RR** with an
+      NASM context switch and an in-ring idle (`LIONOS_SCHED tasks=3 switches=…`)
+- [x] Driver layer — serial+spinlock, framebuffer bitmap text, PS/2 keyboard,
+      mouse IRQ12, CMOS RTC, PCI bus-0 enum, VGA text, PC speaker, face-id gate
+- [x] **Disk + read-only FAT32** — ATA PIO block driver (0x1F0/0x170) +
+      virtio-blk PCI detect; FAT32 BPB parser, root walk, cluster-chain read —
+      **mtools-verified end-to-end** (`LIONOS_FS_OK/LS/READ`)
+- [x] **Task 4 detect drivers** — AHCI, NVMe, e1000, RTL8139, UHCI, EHCI, HPET,
+      IOAPIC, Bochs-VBE (each pure core host-tested + `LIONOS_DRV_*` marker;
+      e1000 + I/O APIC are real `found=1` on QEMU)
+- [x] `v0.3.0` release + GHCR `lion:v0.3.0`
+
 ### In Progress
 
 - [x] Framebuffer (GOP) handoff — **shipped** (bootloader 0.11.17)
@@ -194,8 +219,6 @@ unit-tested, and fuzzed.
 
 ### Planned
 
-- [ ] Month 3: drivers (serial spinlock, framebuffer bitmap-text), scheduler,
-      read-only FAT32 filesystem
 - [ ] Month 4: syscalls, ring separation, ELF loader, minimal shell
 - [ ] Month 5: graphics, compositor, wallpaper
 - [ ] Month 6: Path A (shell + AI stub) or Path B (hardening)
@@ -210,13 +233,19 @@ unit-tested, and fuzzed.
 | Launcher CLI (run/doctor/update) | ✅ | v0.1.0 | cross-platform |
 | Parser unit tests + fuzzing | ✅ | v0.1.0 | 16 tests, no crashes |
 | C + asm integration | ✅ | v0.1.0 | `[ffi]` boot diagnostic + CI |
-| GHCR container image | ✅ | v0.2.0 | `ghcr.io/.../lion:v0.2.0` |
+| GHCR container image | ✅ | v0.3.0 | `ghcr.io/.../lion:v0.3.0` |
 | Interrupts (IDT/PIC/PIT/keyboard) | ✅ | v0.2.0 | IRQ_FLAGS / TIMER_TICKS / IRQ_OK |
 | Frame-backed heap + frame allocator | ✅ | v0.2.0 | `#[global_allocator]`, HEAP_OK / FRAMES |
 | Page-table **takeover** (own PML4 + CR3) | ✅ | v0.2.0 | TAKEOVER cr3= … owned=1 |
 | GDT + TSS/IST (double-fault stack) | ✅ | v0.2.0 | GDT_OK ist0=… |
 | Framebuffer (GOP) handoff | 🔧 | v0.2.0 | drawing works; text/anim next |
-| Drivers / scheduler / FAT32 | 📋 | v0.3.0 | Month 3 |
+| C++17 + Zig joined to FFI | ✅ | v0.3.0 | `LIONOS_CPP`/`LIONOS_ZIG` magics boot-verified |
+| Scheduler (coop → preemptive RR) | ✅ | v0.3.0 | `LIONOS_SCHED`, NASM switch + PIT preempt |
+| Container + driver layer | ✅ | v0.3.0 | kbd/mouse/RTC/PCI/VGA/speaker + face-id |
+| ATA PIO disk + virtio-blk detect | ✅ | v0.3.0 | `LIONOS_DRV_IDE disks=…` |
+| Read-only FAT32 (mtools-verified) | ✅ | v0.3.0 | `LIONOS_FS_OK/LS/READ`, byte-identical read |
+| AHCI/NVMe/e1000/RT/ UHCI/EHCI/HPET/IOAPIC/VBE | ✅ | v0.3.0 | detect markers, e1000 + I/O APIC found on QEMU |
+| Syscalls / user mode / shell | 📋 | v0.4.0 | Month 4 |
 | Syscalls / user mode / shell | 📋 | v0.4.0 | Month 4 |
 | Graphics / compositor | 📋 | v0.5.0 | Month 5 |
 | Shell + AI stub / hardening | 🔮 | v1.0.0 | Month 6 |
@@ -449,7 +478,7 @@ LIONOS_INIT_OK
 ### Docker Alternative
 
 ```bash
-docker run --rm ghcr.io/ram1234598766-dotcom/lion-os/lion:v0.2.0
+docker run --rm ghcr.io/ram1234598766-dotcom/lion-os/lion:v0.3.0
 ```
 
 (Uses QEMU inside the container and streams serial output to the terminal.)
@@ -474,7 +503,7 @@ lionos run        # boots the kernel in QEMU
 ### Method 2 — Containers (GHCR)
 
 ```bash
-docker run --rm ghcr.io/ram1234598766-dotcom/lion-os/lion:v0.2.0
+docker run --rm ghcr.io/ram1234598766-dotcom/lion-os/lion:v0.3.0
 ```
 
 ### Method 3 — From source
@@ -1109,13 +1138,18 @@ kernel integration.
       gates the new paging/GDT markers; a deeper integration suite lands with
       the Month-4 refinement week
 
-### Version 0.3 — Scheduler, drivers, filesystem
+### Version 0.3 — Scheduler, drivers, filesystem *(shipped)*
 
 **Target:** Month 3
 
-- [ ] Drivers (serial+lock, framebuffer primitives, text)
-- [ ] Cooperative + preemptive scheduler
-- [ ] Read-only FAT32 (block abstraction, mtools images, fuzz)
+- [x] Driver layer (serial+lock, framebuffer primitives/text) + extras
+      (keyboard/mouse/RTC/PCI/VGA/speaker/face-id)
+- [x] C++17 + Zig joined to the FFI (`LIONOS_CPP`/`LIONOS_ZIG` magics)
+- [x] Cooperative + preemptive scheduler (PIT-driven round-robin, NASM switch)
+- [x] Read-only FAT32 over real block I/O (ATA PIO + virtio-blk detect;
+      mtools image, byte-identical read)
+- [x] Task-4 detect set: AHCI/NVMe/e1000/RTL8139/UHCI/EHCI/HPET/IOAPIC/VBE
+- [x] GHCR `lion:v0.3.0` tagged release
 
 ### Version 0.4 — Userland foundations
 
@@ -1154,7 +1188,7 @@ kernel integration.
 
 ## Changelog
 
-### [Unreleased] — Month 3 (drivers)
+### [v0.3.0] — Month 3
 
 #### Added
 
@@ -1176,6 +1210,31 @@ kernel integration.
     policy (enroll → verify/gate), clearly labeled a mock (`LIONOS_DRV_FACEID`).
 - All driver inits print deterministic markers that CI greps; 76 host unit
   tests (was 57).
+- **C++17 + Zig language lay:** `kernel/cpp/lionos_cpp.cpp` +
+  `kernel/zig/lionos_zig.zig` compile into `liblionos_ffi.a` (build.rs adds
+  `g++` and `zig build-obj` invocations, kernel-target only). Boot magics
+  `LIONOS_CPP magic=c0ffee0c` and `LIONOS_ZIG magic=…` / `table=…` prove both
+  objects linked and ran.
+- **Scheduler (`kernel/src/sched.rs` + `asm/switch.asm`):** PCB ring → index
+  based idle; cooperative `yield` plus **PIT-preemptive round-robin** using an
+  NASM callee-saved context switch; task stacks heap-allocated (frame-backed).
+  Boots `LIONOS_SCHED tasks=3 switches=… rot=…` (3 tasks interleave on one
+  closure across 100k rotations — the preemption proof).
+- **Disk + read-only FAT32:** `drivers/ide.rs` — ATA-1 PIO block driver
+  (`probe_all` both channels, LBA-28 `read_sector`, pure geometry host-tested);
+  `drivers/virtio_blk.rs` — PCI detect shim. `kernel/src/fs.rs` — FAT32 BPB
+  parser, root dir walk, cluster-chain `read`, `Fs{mount,ls,find,read}`.
+  Fixed the FAT32 dir-entry cluster layout (hi word @20 | lo word @26 — not a
+  little-endian u32 @20). **mtools-verified end-to-end:** boots a real FAT32
+  image on the secondary ATA channel, `LIONOS_FS_OK disk=1`,
+  `LIONOS_FS_LS count=1 [HELLO.TXT]`, `LIONOS_FS_READ … bytes=44 head=6c6c6548`
+  (byte-identical to the host file).
+- **Task 4 detect drivers:** `ahci`, `nvme`, `e1000`, `rtl8139`, `uhci`, `ehci`,
+  `hpet`, `ioapic`, `vbe` — each a pure host-tested core + a `#[cfg(none)]`
+  probe printing `LIONOS_DRV_* found=1 …` / `ABSENT` (never faults). On QEMU
+  the e1000 NIC and I/O APIC are real `found=1`; the rest report absent.
+- Host suite now **105 tests** (was 76); CI greps the new ATA/FS, Task-4,
+  scheduler, C++ and Zig markers and boots a FAT32 second drive.
 
 ### [v0.2.0] — Month 2
 
