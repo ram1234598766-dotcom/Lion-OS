@@ -21,15 +21,54 @@ shipped. This month:
    freestanding to x86_64 ELF64 objects that drop into `liblionos_ffi.a`, beside
    the existing Rust / C / NASM / GAS.
 
-## Explicit non-goals (boot chain)
-- **Android from an SD card / phone boot is out of scope.** A consumer Android is
-  ARM64 with a locked bootloader; it cannot boot this x86_64 BIOS kernel, and this
-  repo will not fake that. The +10 driver set is real-hardware *standards* that
-  QEMU also emulates — developable and testable today, and applicable to real
-  silicon later.
-- **Real-PC UEFI boot is deferred** to a future month (separate boot-chain
-  milestone). This month's drivers (AHCI, NVMe, NICs, HPET, IOAPIC, VBE) are the
-  precursor hardware work for it; the boot path itself stays BIOS/QEMU.
+## Platform tracks — "LionOS on computers AND Android"
+
+The goal is a kernel that can run on both a computer and an Android phone. That
+is not one binary today: the two platforms differ at the **boot chain and CPU
+architecture**, which is exactly where this repo lives. Rather than blur them into
+one, the plan keeps **two explicit tracks sharing one kernel core**. All Month-3
+work below lands in the shared core; the tracks are where the platform-specific
+shell boots.
+
+### Track PC — x86_64 (computers) — ACTIVE, buildable now
+- The kernel/`os/` repo as it exists: **x86_64, BIOS→(future UEFI)**, boots today.
+- Month-3 drivers (AHCI, NVMe, e1000, RTL8139, UHCI/EHCI, HPET, IOAPIC, VBE) are
+  the real-hardware *standards* that are ALSO emulated by QEMU — developed/tested
+  there now, and they transfer to real PCs (the precursor to a UEFI real-PC boot).
+- Immediate deliverable: `lionos run` on a PC; later a `v0.4.0` UEFI image for
+  real hardware.
+
+### Track Android — ARM64 (phones) — SEPARATE, future
+- A stock consumer Android phone is **ARM64 with a locked bootloader**; it cannot
+  boot the x86_64 BIOS kernel, and no amount of driver below changes that boot
+  wall. Building the same OS for Android is a **separate cross-architecture
+  target** (an `aarch64-unknown-none` kernel + a different boot chain), sharing
+  the kernel core but not the x86 boot path.
+- **Honest posture:** Android is scoped as its own track with its own target in a
+  later month, NOT "merged and running on a Pixel this week," which would be
+  fabricated. It is planned and designed for here, not silently promised.
+- FIRST Android milestone: sketch the `aarch64` kernel+trampoline once Track PC
+  reaches stable parity, reusing every real-standard driver above (they are
+  architecture-portable wherever they are pure logic).
+- **Emulated preview that IS possible today (optional, early):** an **x86 Android
+  device/emulator** (Android-x86 image or the emulator's x86 guest) is an honest
+  on-QEMU path that exercises a real Android boot chain *without* claiming arm64;
+  the repo can provide this as an early demo harness, separate from the arm64
+  "real phone" track. This is the one Android-adjacent deliverable real TODAY
+  because it does not fake the CPU.
+
+## What is NOT in this month's build (kept out, not denied as a goal)
+The two tracks above are the home for Android and PCs; nothing below hides or
+fakes them. Specifically, within **Month-3 Track PC** we do not yet:
+- **boot real PCs over UEFI** — that is a deferred boot-chain milestone. This
+  month's drivers (AHCI, NVMe, NICs, HPET, IOAPIC, VBE) are the precursor
+  hardware work for it; the boot path stays BIOS/QEMU for now.
+- **run on a real phone** — that is the SEPARATE Track Android (arm64), planned
+  and designed above, not silently promised or merged into the x86 binary.
+
+The +10 driver set is real-hardware *standards* that QEMU also emulates —
+developable and testable today, architecture-portable for BOTH tracks (the
+pure-logic cores drop into a future aarch64 kernel unchanged).
 
 ## The +10 real driver set (all QEMU-emulatable → real-worthy)
 | # | Driver | Real standard | QEMU device | Bundle |
