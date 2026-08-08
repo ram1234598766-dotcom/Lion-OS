@@ -11,9 +11,16 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install system deps (QEMU + mtools + NASM)
-        # NASM assembles kernel/asm/port_io.asm + cpu_utils.asm via build.rs.
-        run: sudo apt-get update && sudo apt-get install -y qemu-system-x86 mtools nasm
+      - name: Install system deps (QEMU + mtools + NASM + g++ + Zig 0.14)
+        # NASM assembles asm/port_io.asm + cpu_utils.asm via build.rs; the
+        # kernel also compiles C++17 (g++ frontend) and Zig (`zig build-obj`)
+        # from the Month-3 language lay, so all are required for `cargo build`.
+        run: |
+          sudo apt-get update && sudo apt-get install -y qemu-system-x86 mtools nasm g++ build-essential
+          curl -sL -o /tmp/zig.tar.xz https://ziglang.org/download/0.14.0/zig-linux-x86_64-0.14.0.tar.xz
+          sudo mkdir -p /opt/zig && sudo tar -xf /tmp/zig.tar.xz -C /opt/zig --strip-components=1
+          sudo ln -sf /opt/zig/zig /usr/local/bin/zig
+          zig version
 
       - name: Install pinned nightly Rust with freestanding target
         uses: dtolnay/rust-toolchain@stable

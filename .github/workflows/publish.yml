@@ -23,8 +23,16 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install NASM (the kernel assembles asm/*.asm via build.rs)
-        run: sudo apt-get update && sudo apt-get install -y nasm
+      - name: Install kernel build toolchain (NASM + g++ + Zig 0.14)
+        # build.rs compiles: GAS/NASM asm (asm/*.asm, .s), C (c/*.c), C++17
+        # (cpp/lionos_cpp.cpp via the g++ frontend) and Zig (`zig build-obj`).
+        # ubuntu-latest ships gcc/g++ but not nasm or zig, so install those.
+        run: |
+          sudo apt-get update && sudo apt-get install -y nasm g++ build-essential
+          curl -sL -o /tmp/zig.tar.xz https://ziglang.org/download/0.14.0/zig-linux-x86_64-0.14.0.tar.xz
+          sudo mkdir -p /opt/zig && sudo tar -xf /tmp/zig.tar.xz -C /opt/zig --strip-components=1
+          sudo ln -sf /opt/zig/zig /usr/local/bin/zig
+          zig version && g++ --version | head -1
 
       - name: Install pinned nightly Rust + tools
         uses: dtolnay/rust-toolchain@stable
