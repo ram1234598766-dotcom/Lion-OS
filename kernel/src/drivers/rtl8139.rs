@@ -41,15 +41,31 @@ impl Rtl8139 {
     }
 }
 
-/// Boot-time detection hook: print `LIONOS_DRV_RTL8139 found=1 dev=… ` and a
+/// Boot-time detection hook: print `LIONOS_DRV_RTL8139 found=1 cfg=…` and a
 /// newline when present, or `LIONOS_DRV_RTL8139 ABSENT` when not. Never faults.
+///
+/// The `cfg=` field is the device's real CONFIG1 register (offset +0x52 in the
+/// BAR block): read by PIO (`inb`/`inw`) when BAR0 is an I/O BAR (raw bit0 set)
+/// or by MMIO (`read32`) when it is memory-mapped. See RTL8139 datasheet §6.3.
 #[cfg(target_os = "none")]
 pub fn init() {
     let found = Rtl8139::probe();
     match found {
         Some(n) => {
-            crate::serial::write_str("LIONOS_DRV_RTL8139 found=1 dev=");
-            crate::serial::write_hex(u64::from(n.pci.vendor as u16) << 16 | u64::from(n.pci.device as u16));
+            // SAFETY: present device; BAR0 is at config offset 0x10, 4-aligned.
+            let raw = unsafe { pci::config_read(n.pci.bus, n.pci.slot, n.pci.func, 0x10) };
+            let bar = pci::bar_addr(&n.pci, 0);
+            let cfg: u32 = if raw & 1 == 1 {
+                // I/O BAR: CONFIG1 at port+0x52.
+                let port = bar as u16;
+                // Windows/MEM extraneous bit; 8-bit device register.
+                u32::from(crate::drivers::mmio::inb(port + 0x52))
+            } else {
+                // Memory BAR: CONFIG1 at bar+0x52, low byte (b8 CONFIG1).
+                crate::drivers::mmio::read32(bar + 0x52) & 0xFF
+            };
+            crate::serial::write_str("LIONOS_DRV_RTL8139 found=1 cfg=");
+            crate::serial::write_hex(u64::from(cfg));
         }
         None => crate::serial::write_str("LIONOS_DRV_RTL8139 ABSENT"),
     }

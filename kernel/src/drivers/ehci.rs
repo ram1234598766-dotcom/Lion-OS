@@ -40,15 +40,20 @@ impl Ehci {
     }
 }
 
-/// Probe and print the boot marker for the EHCI controller. Report found (with
-/// the PCI vendor/device id) or ABSENT — never a fault.
+/// Probe and print the boot marker for the EHCI controller. On a hit, decodes
+/// BAR0 through the physical-memory window and reads the Host Control
+/// Structural Parameters (HCSPARAMS) register at offset `0x04`. Report found
+/// (with the real `hcs` value) or ABSENT — never a fault: if the phys window
+/// read returns 0, we still print `found=1` with the value read.
 #[cfg(target_os = "none")]
 pub fn init() {
     let ehci = Ehci::probe();
     match &ehci {
         Some(e) => {
-            crate::serial::write_str("LIONOS_DRV_EHCI found=1 pci=");
-            crate::serial::write_hex(u64::from((e.pci.vendor as u32) << 16 | e.pci.device as u32));
+            let bar = crate::drivers::pci::bar_addr(&e.pci, 0);
+            let hcs = crate::drivers::mmio::read32(bar + 0x04);
+            crate::serial::write_str("LIONOS_DRV_EHCI found=1 hcs=");
+            crate::serial::write_hex(u64::from(hcs));
         }
         None => crate::serial::write_str("LIONOS_DRV_EHCI ABSENT"),
     }

@@ -27,22 +27,17 @@ pub fn init() {
     // config read never faults even on absent devices (returns all-ones).
     let devs = crate::drivers::pci::probe_bus0();
     if let Some(d) = devs.into_iter().find(|d| is_nvme(d.class, d.subclass)) {
-        crate::serial::write_str("LIONOS_DRV_NVME found=1 pci=");
-        c_vendor_device(&d);
-        crate::serial::write_str(" class=");
-        crate::serial::write_hex(u64::from(d.class));
-        crate::serial::write_str("/");
-        crate::serial::write_hex(u64::from(d.subclass));
+        // Real register read: BAR0 + 0x04 holds the top dword of the controller
+        // CAPABILITY register. The phys window is live post-paging-takeover;
+        // if it isn't (read returns 0) we still report found=1 with that value.
+        let bar0 = crate::drivers::pci::bar_addr(&d, 0);
+        let vs = crate::drivers::mmio::read32(bar0.wrapping_add(0x04));
+        crate::serial::write_str("LIONOS_DRV_NVME found=1 vs=");
+        crate::serial::write_hex(u64::from(vs));
     } else {
         crate::serial::write_str("LIONOS_DRV_NVME ABSENT");
     }
     crate::serial::write_str("\r\n");
-}
-
-/// Print `vendor:device` as one 8-digit hex pair (`write_hex` has no `0x`).
-#[cfg(target_os = "none")]
-fn c_vendor_device(v: &crate::drivers::pci::PciDevice) {
-    crate::serial::write_hex(u64::from(v.vendor) << 16 | u64::from(v.device));
 }
 
 #[cfg(test)]

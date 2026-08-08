@@ -32,6 +32,7 @@ pub mod hpet;
 pub mod ide;
 pub mod ioapic;
 pub mod keyboard;
+pub mod mmio;
 pub mod mouse;
 pub mod nvme;
 pub mod pci;

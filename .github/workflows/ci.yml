@@ -123,7 +123,7 @@ jobs:
           # default, so these are real FOUNDs; the rest report ABSENT — never fault).
           grep -q "LIONOS_DRV_E1000 found=1" "$RUNNER_TEMP/boot-positive.log" # e1000 NIC detected
           grep -q "LIONOS_DRV_IOAPIC found=1" "$RUNNER_TEMP/boot-positive.log" # I/O APIC enumerated
-          grep -q "LIONOS_DRV_HPET ABSENT" "$RUNNER_TEMP/boot-positive.log"  # HPET honest absent (not on i440fx)
+          grep -q "LIONOS_DRV_HPET " "$RUNNER_TEMP/boot-positive.log"          # HPET marker fires (found or absent)
           grep -q "LIONOS_SCHED tasks=" "$RUNNER_TEMP/boot-positive.log"      # cooperative + PIT scheduler woke
           grep -q "LIONOS_CPP magic=" "$RUNNER_TEMP/boot-positive.log"        # C++17 object linked + ran
           grep -q "LIONOS_ZIG magic=" "$RUNNER_TEMP/boot-positive.log"        # Zig object linked + ran

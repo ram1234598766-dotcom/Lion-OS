@@ -31,7 +31,23 @@ pub fn is_present(vd: u32) -> bool {
     vendor != 0xFFFF && vendor != 0x0000
 }
 
-/// Read a 32-bit config dword for `(bus, slot, func)` at `offset` (0..=252, /4).
+/// The address of a device's BAR `bar` (0..4), decoded from PCI config space:
+/// a 32-bit memory BAR is page-masked (`0xFFFF_FFF0`); an I/O BAR is a 16-bit
+/// port (`0xFFFF_FFFC`). Bit 0 of the raw BAR selects IO (1). 64-bit BARs are
+/// left for a later capability-aware pass (drivers here use 32-bit BARs).
+#[cfg(target_os = "none")]
+pub fn bar_addr(d: &PciDevice, bar: u8) -> u64 {
+    let off = 0x10 + 4 * (bar as u8);
+    // SAFETY: present device; offset is 4-aligned.
+    let raw = unsafe { config_read(d.bus, d.slot, d.func, off) };
+    if raw & 1 == 1 {
+        (raw & 0xFFFF_FFFC) as u64 // I/O BAR -> port address
+    } else {
+        (raw as u64) & 0xFFFF_FFF0 // 32-bit memory BAR
+    }
+}
+
+/// Read a 32-bit config dword for `(bus, slot, func)` at `offset`.
 ///
 /// # Safety
 /// Port I/O; CONFIG_ADDR/DATA are the standard x86 PCI mechanism #1 registers.

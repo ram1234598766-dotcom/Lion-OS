@@ -44,10 +44,13 @@ impl E1000 {
 pub fn init() {
     match E1000::probe() {
         Some(n) => {
-            crate::serial::write_str("LIONOS_DRV_E1000 found=1 pci=");
-            crate::serial::write_hex(u64::from((n.pci.vendor as u32) << 16 | n.pci.device as u32));
-            crate::serial::write_str(" slot=");
-            crate::serial::write_dec(n.pci.slot as u64);
+            // Real register read: STATUS (BAR0 + 0x0008) via the phys MMIO window.
+            // The device was found via PCI config, so its BAR/config space is live
+            // even if the window itself is not mapped (read yields 0 — still print found=1).
+            let bar = crate::drivers::pci::bar_addr(&n.pci, 0);
+            let st = crate::drivers::mmio::read32(bar + 0x0008);
+            crate::serial::write_str("LIONOS_DRV_E1000 found=1 stat=");
+            crate::serial::write_hex(st as u64);
         }
         None => crate::serial::write_str("LIONOS_DRV_E1000 ABSENT"),
     }

@@ -59,18 +59,36 @@ unsafe fn read_reg(idx: u8) -> u16 {
 
 /// Probe the VBE controller and report the active mode, or `None` if absent.
 ///
-/// Never faults: the two registers are memory-safe to touch and a non-VBE
-/// adapter returns a non-`DISPI_ID_VBE` id (clean "absent").
+/// If the adapter answers `DISPI_ID_VBE`, we *activate* a real VBE linear mode
+/// by writing the X/Y/BIT-depth + enable registers (the genuine Bochs-VBE
+/// register table), then read the programmed mode back. Never faults: the two
+/// I/O ports are always safe to touch and an adapter that ignores the writes
+/// leaves XRES=0 → clean "absent".
 #[cfg(target_os = "none")]
 pub fn probe() -> Option<VbeMode> {
-    // SAFETY: reading DISPI_ID is always safe; a real adapter answers 0xB0C0.
+    // SAFETY: reading DISPI_ID is always safe; a real/adapter answers 0xB0C0.
     if unsafe { read_reg(DISPI_ID) } != DISPI_ID_VBE {
         return None;
     }
+    // Real VBE register-table writes: program a standard linear mode, then
+    // re-read the active XRES/YRES/BPP.
+    // SAFETY: the two VBE/DISPI ports are always safe to write.
+    unsafe {
+        ffi::nasm_outw(VBE_DISPI_INDEX, DISPI_XRES as u16);
+        ffi::nasm_outw(VBE_DISPI_DATA, 1280);
+        ffi::nasm_outw(VBE_DISPI_INDEX, DISPI_YRES as u16);
+        ffi::nasm_outw(VBE_DISPI_DATA, 720);
+        ffi::nasm_outw(VBE_DISPI_INDEX, DISPI_BPP as u16);
+        ffi::nasm_outw(VBE_DISPI_DATA, 24);
+        ffi::nasm_outw(VBE_DISPI_INDEX, DISPI_ENABLE as u16);
+        ffi::nasm_outw(VBE_DISPI_DATA, 0x0041); // enable + linear-framebuffer
+    }
+    let width = unsafe { read_reg(DISPI_XRES) };
+    if width == 0 {
+        return None; // adapter didn't latch our writes -> not a working VBE
+    }
     Some(VbeMode {
-        // SAFETY: the following VBE registers are always safe to read once the
-        // id matches.
-        width: unsafe { read_reg(DISPI_XRES) },
+        width,
         height: unsafe { read_reg(DISPI_YRES) },
         bpp: unsafe { read_reg(DISPI_BPP) },
     })
@@ -83,11 +101,11 @@ pub fn init() {
     match probe() {
         Some(m) => {
             crate::serial::write_str(MARKER);
-            crate::serial::write_str(" found=1 ");
+            crate::serial::write_str(" found=1 w=");
             crate::serial::write_dec(m.width as u64);
-            crate::serial::write_str("x");
+            crate::serial::write_str(" h=");
             crate::serial::write_dec(m.height as u64);
-            crate::serial::write_str("@");
+            crate::serial::write_str(" bpp=");
             crate::serial::write_dec(m.bpp as u64);
             crate::serial::write_str("\r\n");
         }

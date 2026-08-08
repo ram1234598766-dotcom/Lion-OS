@@ -47,8 +47,16 @@ impl Uhci {
 pub fn init() {
     match Uhci::probe() {
         Some(u) => {
-            crate::serial::write_str("LIONOS_DRV_UHCI found=1 pci=");
-            crate::serial::write_hex(u64::from(u.pci.vendor) << 16 | u64::from(u.pci.device));
+            crate::serial::write_str("LIONOS_DRV_UHCI found=1 ");
+            // UHCI is an I/O BAR: BAR0 decodes to a port. Read the
+            // CMD register (0) and FRNUM register (8) as real 16-bit ports.
+            let port: u16 = crate::drivers::pci::bar_addr(&u.pci, 0) as u16;
+            let cmd: u16 = crate::drivers::mmio::inw(port);
+            let frame: u16 = crate::drivers::mmio::inw(port + 8);
+            crate::serial::write_str("cmd=");
+            crate::serial::write_hex(u64::from(cmd));
+            crate::serial::write_str(" frame=");
+            crate::serial::write_hex(u64::from(frame));
         }
         None => crate::serial::write_str("LIONOS_DRV_UHCI ABSENT"),
     }

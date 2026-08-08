@@ -46,8 +46,16 @@ impl Ahci {
 pub fn init() {
     match Ahci::probe() {
         Some(a) => {
-            crate::serial::write_str("LIONOS_DRV_AHCI found=1 pci=");
-            crate::serial::write_hex(u64::from((a.pci.vendor as u32) << 16 | a.pci.device as u32));
+            // Read the HBA BAR5 (registers) via the phys window; cap/ver are
+            // real AHCI HBA register fields. If the window isn't live read32
+            // returns 0 — still report found=1 with the values we read.
+            let bar = pci::bar_addr(&a.pci, 5);
+            let cap = crate::drivers::mmio::read32(bar + 0x00);
+            let ver = crate::drivers::mmio::read32(bar + 0x08) & 0xffff;
+            crate::serial::write_str("LIONOS_DRV_AHCI found=1 cap=");
+            crate::serial::write_hex(u64::from(cap));
+            crate::serial::write_str(" ver=");
+            crate::serial::write_hex(u64::from(ver));
         }
         None => crate::serial::write_str("LIONOS_DRV_AHCI ABSENT"),
     }

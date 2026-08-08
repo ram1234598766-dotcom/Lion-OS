@@ -13,9 +13,11 @@
 //! touching hardware — never a fault.
 
 /// Conventional HPET base address (physical).
-pub const HPET_BASE: usize = 0xF000_0000;
+pub const HPET_BASE: usize = 0xFED0_0000;
 /// General-capabilities register offset (offset 0x0 of the HPET block).
 const CAP_REG: usize = 0x00;
+/// Main counter register offset (offset 0xF0 of the HPET block).
+const CNT_REG: usize = 0xF0;
 
 /// Extract the HPET *revision* from the general-capabilities register (low byte).
 /// Pure, host-tested.
@@ -35,24 +37,20 @@ pub fn is_present(cap: u32) -> bool {
 // ---------------------------------------------------------------------------
 
 /// Probe the HPET block via the physical-memory window and print its marker.
-/// Never faults: absent hardware (or no window offset) prints `ABSENT`.
+/// Never faults: absent hardware (or no window offset) reads back 0 and prints
+/// `ABSENT`; a live window but missing counter still prints `found=1` with the
+/// value actually read back.
 #[cfg(target_os = "none")]
 pub fn init() {
-    let off = crate::paging::phys_offset();
-    if off == 0 {
-        crate::serial::write_str("LIONOS_DRV_HPET ABSENT\r\n");
-        return;
-    }
-    // SAFETY: HPET_MMIO maps the capabilities register through the window; the
-    // probe only reads a single DWORD, so a bogus/missing timer can't fault us.
-    let addr = (HPET_BASE as u64 + off) as *const u32;
-    let cap = unsafe { core::ptr::read_volatile(addr) };
+    let cap = crate::drivers::mmio::read32((HPET_BASE + CAP_REG) as u64);
     if !is_present(cap) {
         crate::serial::write_str("LIONOS_DRV_HPET ABSENT\r\n");
         return;
     }
-    crate::serial::write_str("LIONOS_DRV_HPET found=1 rev=");
-    crate::serial::write_dec(u64::from(version(cap)));
+    // Main counter: a live HPET ticks here, so this is a real moving value.
+    let cnt = crate::drivers::mmio::read32((HPET_BASE + CNT_REG) as u64);
+    crate::serial::write_str("LIONOS_DRV_HPET found=1 counter=");
+    crate::serial::write_hex(u64::from(cnt));
     crate::serial::write_str("\r\n");
 }
 
