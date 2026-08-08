@@ -9,6 +9,11 @@ panic = "abort"
 
 [profile.dev]
 panic = "abort"
+# Keep the freestanding kernel image lean: bootloader 0.11 hands out its own
+# page-table frames starting at ~0x13a000, so an unoptimized (debug) kernel whose
+# segments cross that boundary fails with PageAlreadyMapped at boot. opt-level=1
+# shrinks .text/.rodata so the runtime image stays under the bootloader's reserve.
+opt-level = 1
 
 # Host-side unit tests (kernel/lib, run via `cargo test --target x86_64-unknown-linux-gnu`)
 # need the default unwind strategy so a failing assertion fails one test instead of

@@ -144,9 +144,51 @@ pub fn init_all() {
                             serial::write_str(&e.display_name());
                         }
                         serial::write_str("]\r\n");
-                        // Read the first listed file back — the end-to-end check
-                        // that the FAT walk follows a real cluster chain.
-                        if let Some(e0) = entries.first() {
+                        // LFN + file-path + subdir exercises on a real disk.
+                        if let Some(file) = entries.iter().find(|e| !e.is_dir) {
+                            let name = file.display_name();
+                            let mut got = alloc::vec::Vec::new();
+                            if f.read_path(disk, &name, &mut got) {
+                                serial::write_str("LIONOS_FS_READ_PATH name=");
+                                serial::write_str(&name);
+                                serial::write_str(" bytes=");
+                                serial::write_dec(got.len() as u64);
+                                serial::write_str("\r\n");
+                            } else {
+                                serial::write_str("LIONOS_FS_READ_PATH_ERR\r\n");
+                            }
+                        }
+                        if let Some(dir) = entries.iter().find(|e| e.is_dir) {
+                            let dirname = dir.display_name();
+                            let mut sub = alloc::vec::Vec::new();
+                            if f.ls_path(disk, &dirname, &mut sub) {
+                                serial::write_str("LIONOS_FS_LS_SUB dir=");
+                                serial::write_str(&dirname);
+                                serial::write_str(" count=");
+                                serial::write_dec(sub.len() as u64);
+                                serial::write_str("\r\n");
+                                if let Some(inner) = sub.iter().find(|e| !e.is_dir) {
+                                    // Skip the "." / ".." dot entries and read a
+                                    // real inner file by a full `/` path (LFN).
+                                    let path = alloc::format!("{}/{}", dirname, inner.display_name());
+                                    let mut got = alloc::vec::Vec::new();
+                                    if f.read_path(disk, &path, &mut got) {
+                                        serial::write_str("LIONOS_FS_READ_SUB name=");
+                                        serial::write_str(&path);
+                                        serial::write_str(" bytes=");
+                                        serial::write_dec(got.len() as u64);
+                                        serial::write_str("\r\n");
+                                    } else {
+                                        serial::write_str("LIONOS_FS_READ_SUB_ERR\r\n");
+                                    }
+                                }
+                            } else {
+                                serial::write_str("LIONOS_FS_LS_SUB_ERR\r\n");
+                            }
+                        }
+                        // Read the first listed FILE back by cluster chain — the
+                        // end-to-end check that the FAT walk follows a real chain.
+                        if let Some(e0) = entries.iter().find(|e| !e.is_dir) {
                             let mut data = alloc::vec::Vec::new();
                             if f.read(disk, e0.cluster, e0.size, &mut data) {
                                 serial::write_str("LIONOS_FS_READ name=");

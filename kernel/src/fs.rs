@@ -14,6 +14,7 @@
 //! on-disk walk (cluster chains, 32-bit FAT entries) is short-8.3-names-only
 //! by design (plan: read-only FAT32, no LFN, no subdir reads).
 
+use alloc::string::String;
 use alloc::vec::Vec;
 
 /// A directory entry's cluster is stored as two 16-bit words: the **high** word
@@ -167,21 +168,110 @@ impl Fs {
     ) -> bool {
         read_file(dev, &self.info, first_cluster, size, out)
     }
+
+    /// Resolve a `'/'`-separated path (e.g. `"SUBDIR/file.txt"`, or `"file.txt"`
+    /// for the root) to its directory entry, descending through subdirectories
+    /// and matching long or short names case-insensitively.
+    pub fn find_by_path(&self, dev: &impl BlockDevice, path: &str) -> Option<DirEntry> {
+        resolve(dev, &self.info, path)
+    }
+
+    /// List the directory at `path` into `out` (descend through subdirs).
+    pub fn ls_path(&self, dev: &impl BlockDevice, path: &str, out: &mut Vec<DirEntry>) -> bool {
+        let dir = if path.is_empty() || path == "/" {
+            self.info.root_cluster
+        } else {
+            match resolve(dev, &self.info, path) {
+                Some(e) => e.cluster,
+                None => return false,
+            }
+        };
+        list_dir(dev, &self.info, dir, out)
+    }
+
+    /// Read the file at `path` into `out`. Returns false if absent or the chain
+    /// breaks mid-read.
+    pub fn read_path(&self, dev: &impl BlockDevice, path: &str, out: &mut Vec<u8>) -> bool {
+        let e = match resolve(dev, &self.info, path) {
+            Some(e) if !e.is_dir => e,
+            _ => return false,
+        };
+        read_file(dev, &self.info, e.cluster, e.size, out)
+    }
 }
 
-/// The FAT32 directory entry (8.3 name). LFN entries are skipped; subdirectories
-/// are skipped (read-only scan, per plan).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// Resolve a `'/'`-separated path. Matching is case-insensitive (ASCII) against
+/// the long name when present, else the 8.3 short name.
+fn resolve(
+    dev: &impl BlockDevice, info: &FatInfo, path: &str,
+) -> Option<DirEntry> {
+    let comps: Vec<&str> = path.split('/').filter(|c| !c.is_empty()).collect();
+    if comps.is_empty() {
+        return None;
+    }
+    let mut cluster = info.root_cluster;
+    for (i, comp) in comps.iter().enumerate() {
+        let mut entries = Vec::new();
+        list_dir(dev, info, cluster, &mut entries);
+        let e = entries.into_iter().find(|e| entry_matches(e, comp))?;
+        if i == comps.len() - 1 {
+            return Some(e);
+        }
+        if !e.is_dir {
+            return None; // wandered into a file, but path continues
+        }
+        cluster = e.cluster;
+    }
+    None
+}
+
+/// Case-insensitive ASCII match of a path component against a directory entry's
+/// long or short name.
+fn entry_matches(e: &DirEntry, comp: &str) -> bool {
+    let names: [Option<String>; 2] = [
+        e.long_name.clone(),
+        Some(e.short_name()),
+    ];
+    names
+        .into_iter()
+        .flatten()
+        .any(|n| eq_ascii_case_insensitive(n.as_bytes(), comp.as_bytes()))
+}
+
+fn eq_ascii_case_insensitive(a: &[u8], b: &[u8]) -> bool {
+    if a.len() != b.len() { return false; }
+    a.iter().zip(b).all(|(x, y)| x.eq_ignore_ascii_case(y))
+}
+
+/// The FAT32 directory entry (8.3 name). Carries the reconstructed long filename
+/// when LFN entries precede it (plus the optional rebuild via the 8.3 path), and
+/// a `is_dir` flag so callers can descend into subdirectories.
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DirEntry {
     pub name: [u8; 11], // 8.3, space-padded
     pub cluster: u32,
     pub size: u32,
+    /// True when the entry's attribute marks a directory (ATTR_0x10).
+    pub is_dir: bool,
+    /// The LFN-propagated long name (case-reconstructed), if the volume stores one.
+    pub long_name: Option<alloc::string::String>,
 }
 
 impl DirEntry {
+    /// The human-facing name: the reconstructed long filename when one exists,
+    /// else the 8.3 name rendered as `"BASE.EXT"`.
+    pub fn display_name(&self) -> alloc::string::String {
+        if let Some(l) = &self.long_name {
+            if !l.is_empty() {
+                return l.clone();
+            }
+        }
+        self.short_name()
+    }
+
     /// Render the 8.3 name as `"BASE.EXT"`, trimming padding, with the FAT
     /// "0x05 → 0xE5" leading-byte substitution applied.
-    pub fn display_name(&self) -> alloc::string::String {
+    pub fn short_name(&self) -> alloc::string::String {
         let mut name = self.name;
         if name[0] == 0x05 { name[0] = 0xE5; }
         let base = &name[..8];
@@ -194,8 +284,7 @@ impl DirEntry {
             out.push(b'.');
             out.extend_from_slice(&ext);
         }
-        // Lazy-but-safe: 8.3 names are ASCII except the FAT 0x05/E5 lead char,
-        // which renders as a replacement glyph until a codepage table lands.
+        // Lazy-but-safe: 8.3 names are ASCII except the FAT 0x05/E5 lead char.
         alloc::string::String::from_utf8_lossy(&out).into_owned()
     }
 }
@@ -218,16 +307,54 @@ fn read_fat_entry(dev: &impl BlockDevice, info: &FatInfo, c: u32) -> Option<u32>
     Some(raw & FAT32_LAST)
 }
 
-/// A bounded walk that yields the short filenames in the directory located at
-/// `start_cluster`. Pure; verified against a real mtools image (host-side).
+/// One collected LFN intermediate entry: the low-5-bit sequence number plus its
+/// chunk of 13 UTF-16 chars. Reconstructed when the following short entry hits.
+type LfnChunk = (u8, [u16; 13]);
+
+/// Read the 13 UTF-16 (LE) characters of an LFN entry at directory offset `off`.
+#[inline]
+fn lfn_chars(b: &[u8; 512], off: usize) -> [u16; 13] {
+    let mut c = [0u16; 13];
+    // FAT LFN layout: chars 0..5 at bytes 1..10, 5..11 at 14..25, 11..12 at 28..31.
+    for i in 0..13 {
+        let p = match i {
+            0..=4 => off + 1 + i * 2,
+            5..=10 => off + 14 + (i - 5) * 2,
+            _ => off + 28 + (i - 11) * 2,
+        };
+        c[i] = u16::from_le_bytes([b[p], b[p + 1]]);
+    }
+    c
+}
+
+/// Fold a collected LFN chain into the display name, or `None` if empty.
+/// Chunks are stored highest-seq-first in the on-disk order we scan; sort by seq
+/// so seq 1 (the leading chars) comes first, then trim 0x0000/0xFFFF padding.
+fn lfn_reassemble(lfn: &[LfnChunk]) -> Option<String> {
+    if lfn.is_empty() { return None; }
+    let mut sorted = lfn.to_vec();
+    sorted.sort_by_key(|(seq, _)| *seq);
+    let mut chars = Vec::with_capacity(sorted.len() * 13);
+    for (_, c) in &sorted {
+        chars.extend_from_slice(c);
+    }
+    while matches!(chars.last(), Some(0x0000) | Some(0xFFFF)) {
+        chars.pop();
+    }
+    if chars.is_empty() { return None; }
+    Some(String::from_utf16_lossy(&chars))
+}
+
+/// A bounded walk that yields the files + subdirs in the directory located at
+/// `start_cluster`, reconstructing long filenames. Pure host-tested.
 pub fn list_dir(
     dev: &impl BlockDevice, info: &FatInfo, start_cluster: u32, out: &mut Vec<DirEntry>,
 ) -> bool {
     if is_chain_end(start_cluster) { return true; }
     let mut c = start_cluster;
+    let mut lfn: Vec<LfnChunk> = Vec::new();
     for _ in 0..1000 { // bound against an endless cluster chain
         if is_chain_end(c) { break; }
-        // Directory's data sectors = cluster's mapping into the data region.
         let first_sector = info.data_start + (c - 2) * info.sectors_per_cluster as u32;
         for s in 0..info.sectors_per_cluster as u32 {
             let mut buf = [0u8; 512];
@@ -235,16 +362,24 @@ pub fn list_dir(
             for off in (0..512).step_by(32) {
                 let name0 = buf[off];
                 if name0 == 0 { return true; }   // end-of-directory
-                if name0 == 0xE5 { continue; }   // deleted
-                if buf[off + 11] & 0x0F == 0x0F { continue; } // LFN, skip
-                if buf[off + 11] & 0x10 != 0 { continue; }    // subdir, skip
+                if name0 == 0xE5 { lfn.clear(); continue; } // deleted — drop pending LFN
+                let attr = buf[off + 11];
+                if attr & 0x0F == 0x0F {
+                    // Long-entry: keep its seq + 13 chars for the entry that follows.
+                    lfn.push((buf[off] & 0x1F, lfn_chars(&buf, off)));
+                    continue;
+                }
+                // Normal (8.3) entry — attach any collected LFN, then reset.
+                let is_dir = attr & 0x10 != 0;
                 let mut name = [b' '; 11];
                 name.copy_from_slice(&buf[off..off + 11]);
                 // FAT32: cluster = (hi word @ 20 << 16) | (lo word @ 26).
                 let cluster = ((rd16(&buf, off + 20) as u32) << 16)
                     | rd16(&buf, off + 26) as u32;
                 let size = rd32(&buf, off + 28) as u32;
-                out.push(DirEntry { name, cluster, size });
+                let long_name = lfn_reassemble(&lfn);
+                lfn.clear();
+                out.push(DirEntry { name, cluster, size, is_dir, long_name });
             }
         }
         match read_fat_entry(dev, info, c) {
@@ -408,8 +543,10 @@ mod tests {
         let mut entries = Vec::new();
         assert!(fs.ls(&disk, &mut entries));
         assert_eq!(entries.len(), 1);
-        let e = entries[0];
+        let e = &entries[0];
         assert_eq!(&e.name, b"HELLO   TXT");
+        assert!(!e.is_dir);
+        assert!(e.long_name.is_none());
         assert_eq!(e.cluster, 3); // hi@20=0, lo@26=3
         assert_eq!(e.size, content.len() as u32);
 
@@ -428,8 +565,129 @@ mod tests {
 
     #[test]
     fn display_name_formats_dot() {
-        let e = DirEntry { name: *b"HELLO   TXT", cluster: 3, size: 15 };
+        let e = DirEntry { name: *b"HELLO   TXT", cluster: 3, size: 15, is_dir: false, long_name: None };
         assert_eq!(e.display_name(), "HELLO.TXT");
+    }
+
+    /// Write one FAT LFN directory entry: `ordinal` (0x40 bit on the highest-seq,
+    /// furthest entry), `checksum` (ignored), and a 13-char UTF-16 chunk.
+    fn put_lfn(b: &mut [u8], off: usize, ordinal: u8, checksum: u8, chars: [u16; 13]) {
+        b[off] = ordinal;
+        b[off + 11] = 0x0F; // ATTR_LONG_NAME
+        b[off + 12] = 0x00;
+        b[off + 13] = checksum;
+        for i in 0..13 {
+            let p = match i {
+                0..=4 => off + 1 + i * 2,
+                5..=10 => off + 14 + (i - 5) * 2,
+                _ => off + 28 + (i - 11) * 2,
+            };
+            b[p] = chars[i] as u8;
+            b[p + 1] = (chars[i] >> 8) as u8;
+        }
+    }
+
+    /// Write a plain short entry (archive attr) pointing at `cluster` with `size`.
+    fn put_short(b: &mut [u8], off: usize, name: &[u8; 11], attr: u8, cluster: u32, size: u32) {
+        b[off..off + 11].copy_from_slice(name);
+        b[off + 11] = attr;
+        b[off + 20..off + 22].copy_from_slice(&((cluster >> 16) as u16).to_le_bytes());
+        b[off + 26..off + 28].copy_from_slice(&(cluster as u16).to_le_bytes());
+        b[off + 28..off + 32].copy_from_slice(&size.to_le_bytes());
+    }
+
+    /// Base FAT32 sectors shared by the LFN + subdir fixtures: bps=512, spc=1,
+    /// reserved=2, fat=2, spf=1, root=2 → data_start=4, FAT area covers clusters
+    /// 2..5 as singly-chained-then-EOC.
+    fn base_boot() -> Vec<[u8; 512]> {
+        let mut boot = [0u8; 512];
+        boot[11] = 0x00; boot[12] = 0x02;
+        boot[13] = 1;
+        boot[14] = 2; boot[15] = 0;
+        boot[16] = 2;
+        boot[32] = 0x10; boot[36] = 0x01; boot[44] = 2;
+        boot[510] = 0x55; boot[511] = 0xAA;
+        let mut fat = [0u8; 512];
+        fat[0..4].copy_from_slice(&0x0FFF_FFF8u32.to_le_bytes());
+        fat[4..8].copy_from_slice(&0x0FFF_FFFFu32.to_le_bytes());
+        fat[8..12].copy_from_slice(&3u32.to_le_bytes());            // c2 -> c3
+        fat[12..16].copy_from_slice(&0x0FFF_FFFFu32.to_le_bytes()); // c3 EOC
+        fat[16..20].copy_from_slice(&0x0FFF_FFFFu32.to_le_bytes()); // c4 c4 EOC (subdir)
+        fat[20..24].copy_from_slice(&0x0FFF_FFFFu32.to_le_bytes()); // c5 EOC (file)
+        let mut s = Vec::new();
+        s.push(boot);
+        s.push([0u8; 512]); // [1] reserved
+        s.push(fat);         // [2] FAT1
+        s.push(fat);         // [3] FAT2
+        s
+    }
+
+    #[test]
+    fn reconstructs_long_filename() {
+        // Long name "Quarterly report.txt" → chunk1 (seq 0x01) + chunk2 (seq 0x42).
+        let c1: [u16; 13] = b"Quarterly rep".iter().map(|&c| c as u16).collect::<Vec<_>>().try_into().unwrap();
+        let mut c2 = [0u16; 13];
+        for (i, c) in b"ort.txt".iter().enumerate() {
+            c2[i] = *c as u16;
+        }
+        for i in 7..13 { c2[i] = 0xFFFF; }
+
+        let mut sectors = base_boot();
+        let mut root = [0u8; 512];
+        // On-disk order (scan-forward): highest-seq LFN first, then seq 0x01, then the short entry.
+        put_lfn(&mut root, 0, 0x42, 0, c2);
+        put_lfn(&mut root, 0 + 32, 0x01, 0, c1);
+        let content = b"quarterly numbers here";
+        put_short(&mut root, 0 + 64, b"QUARTER TXT", 0x20, 3, content.len() as u32);
+        sectors.push(root);      // [4] root dir
+        let mut data = [0u8; 512];
+        data[..content.len()].copy_from_slice(content);
+        sectors.push(data);      // [5] c3 data
+
+        let disk = MemDisk { sectors };
+        let fs = Fs::mount(&disk).unwrap();
+        let mut entries = Vec::new();
+        assert!(fs.ls(&disk, &mut entries));
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].long_name.as_deref(), Some("Quarterly report.txt"));
+        assert_eq!(entries[0].display_name(), "Quarterly report.txt");
+        assert_eq!(entries[0].short_name(), "QUARTER.TXT");
+        // Long-name path resolution (case-insensitive):
+        let got = fs.find_by_path(&disk, "qUaRtErLy rEpOrT.TxT").expect("resolve by long name");
+        assert_eq!(got.cluster, 3);
+    }
+
+    #[test]
+    fn descends_into_subdirectory() {
+        let mut sectors = base_boot();
+        let mut root = [0u8; 512];
+        // Root: a subdirectory "SUBDIR" -> cluster 4.
+        put_short(&mut root, 0, b"SUBDIR     ", 0x10, 4, 0);
+        sectors.push(root);      // [4] root (cluster 2)
+        let content = b"inside subdir";
+        // Subdir (cluster 4, data_start+(4-2)*1 = 6) lists HELLO -> cluster 5.
+        let mut sub = [0u8; 512];
+        put_short(&mut sub, 0, b"HELLO   TXT", 0x20, 5, content.len() as u32);
+        sectors.push([0u8; 512]);   // [5] cluster 3 (unused data slot)
+        sectors.push(sub);          // [6] cluster 4 (subdir listing)
+        let mut data = [0u8; 512];
+        data[..content.len()].copy_from_slice(content);
+        sectors.push(data);         // [7] cluster 5 (file)
+
+        let disk = MemDisk { sectors };
+        let fs = Fs::mount(&disk).unwrap();
+        let mut got = Vec::new();
+        assert!(fs.read_path(&disk, "SUBDIR/HELLO.TXT", &mut got));
+        assert_eq!(got, content);
+        // And a user-visible casing of the path:
+        let mut got2 = Vec::new();
+        assert!(fs.read_path(&disk, "subdir/Hello.txt", &mut got2));
+        assert_eq!(got2, content);
+        // Listing the subdir yields the file.
+        let mut listing = Vec::new();
+        assert!(fs.ls_path(&disk, "SUBDIR", &mut listing));
+        assert_eq!(listing.len(), 1);
+        assert_eq!(listing[0].display_name(), "HELLO.TXT");
     }
 
     #[test]
