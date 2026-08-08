@@ -25,13 +25,16 @@
 pub mod face_id;
 pub mod fbtext;
 pub mod font5x7;
+pub mod ide;
 pub mod keyboard;
 pub mod mouse;
 pub mod pci;
 pub mod rtc;
 pub mod speaker;
 pub mod vga;
+pub mod virtio_blk;
 
+use crate::fs;
 use crate::serial;
 
 /// Run every driver's init and print a consolidated marker line. Boot-time,
@@ -93,4 +96,80 @@ pub fn init_all() {
     serial::write_str(" deny=");
     serial::write_dec(deny as u64);
     serial::write_str("\r\n");
+
+    // --- disk layer: ATA PIO + virtio-blk detect + read-only FAT32 ---
+    // ATA is the real PIO block transport this month; virtio is detect-only
+    // until the virtqueue ring lands. Absence is reported, never faulted.
+    let virtio = virtio_blk::VirtioBlk::probe();
+    match &virtio {
+        Some(v) => {
+            serial::write_str("LIONOS_DRV_VIRTIO found pci=");
+            serial::write_hex(u64::from((v.pci.vendor as u32) << 16 | v.pci.device as u32));
+        }
+        None => serial::write_str("LIONOS_DRV_VIRTIO ABSENT"),
+    }
+    serial::write_str("\r\n");
+
+    let disks = ide::probe_all();
+    if disks.is_empty() {
+        serial::write_str("LIONOS_DRV_IDE ABSENT\r\n");
+    } else {
+        serial::write_str("LIONOS_DRV_IDE disks=");
+        serial::write_dec(disks.len() as u64);
+        serial::write_str("\r\n");
+        // Mount the first drive whose boot sector parses as FAT32.
+        let mut fs_ok = false;
+        for (i, disk) in disks.iter().enumerate() {
+            match fs::Fs::mount(disk) {
+                Ok(f) => {
+                    serial::write_str("LIONOS_FS_OK disk=");
+                    serial::write_dec(i as u64);
+                    serial::write_str("\r\n");
+                    let mut entries = alloc::vec::Vec::new();
+                    if f.ls(disk, &mut entries) {
+                        serial::write_str("LIONOS_FS_LS count=");
+                        serial::write_dec(entries.len() as u64);
+                        serial::write_str(" [");
+                        for (k, e) in entries.iter().enumerate() {
+                            if k > 0 { serial::write_str(", "); }
+                            serial::write_str(&e.display_name());
+                        }
+                        serial::write_str("]\r\n");
+                        // Read the first listed file back — the end-to-end check
+                        // that the FAT walk follows a real cluster chain.
+                        if let Some(e0) = entries.first() {
+                            let mut data = alloc::vec::Vec::new();
+                            if f.read(disk, e0.cluster, e0.size, &mut data) {
+                                serial::write_str("LIONOS_FS_READ name=");
+                                serial::write_str(&e0.display_name());
+                                serial::write_str(" bytes=");
+                                serial::write_dec(data.len() as u64);
+                                // Deterministic content check: first 4 bytes as
+                                // LE hex, so CI can assert byte-identity.
+                                let mut head = 0u32;
+                                for (i, b) in data.iter().take(4).enumerate() {
+                                    head |= (*b as u32) << (8 * i);
+                                }
+                                serial::write_str(" head=");
+                                serial::write_hex(u64::from(head));
+                                serial::write_str("\r\n");
+                            } else {
+                                serial::write_str("LIONOS_FS_READ_ERR\r\n");
+                            }
+                        }
+                    } else {
+                        serial::write_str("LIONOS_FS_LS_ERR\r\n");
+                    }
+                    fs_ok = true;
+                    break;
+                }
+                Err(_) => {
+                    serial::write_str("LIONOS_FS_BAD_BPB\r\n");
+                }
+            }
+        }
+        if !fs_ok {
+            serial::write_str("LIONOS_FS_NONE_MOUNTED\r\n");
+        }
+    }
 }

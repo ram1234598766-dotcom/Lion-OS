@@ -26,6 +26,7 @@ extern crate std;
 pub mod drivers;
 pub mod ffi;
 pub mod frames;
+pub mod fs;
 pub mod framebuffer;
 pub mod gdt;
 pub mod heap;

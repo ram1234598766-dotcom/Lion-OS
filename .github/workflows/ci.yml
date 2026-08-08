@@ -107,7 +107,34 @@ jobs:
           grep -q "LIONOS_DRV_MOUSE armed" "$RUNNER_TEMP/boot-positive.log" # PS/2 mouse armed
           grep -q "LIONOS_DRV_FACEID auth=1 deny=1" "$RUNNER_TEMP/boot-positive.log" # biometric gate authenticates + denies
           grep -q "LIONOS_FB_TEXT ok" "$RUNNER_TEMP/boot-positive.log"     # framebuffer bitmap-font text
-          echo "PASS: handoff + fb + fmt + LIONOS_INIT_OK + C/asm + M2 IRQ + M2 heap + M2 frames + paging takeover + GDT/TSS + NASM/C-str + M3 driver layer observed on serial"
+          # M3 disk layer: ATA PIO enumerated the (single, non-FAT) boot image in
+          # CI and rejected it honestly — the FAT32 mount is covered by the
+          # second-drive integration boot elsewhere in this workflow.
+          grep -q "LIONOS_DRV_IDE disks=" "$RUNNER_TEMP/boot-positive.log" # ATA PIO probe ran
+          grep -q "LIONOS_FS_NONE_MOUNTED" "$RUNNER_TEMP/boot-positive.log" # no FAT volume -> honest reject
+          echo "PASS: handoff + fb + fmt + LIONOS_INIT_OK + C/asm + M2 IRQ + M2 heap + M2 frames + paging takeover + GDT/TSS + NASM/C-str + M3 driver layer + M3 ATA/FS observed on serial"
+
+      - name: Boot smoke test (read-only FAT32 over ATA PIO second drive)
+        working-directory: os
+        run: |
+          set -e
+          # A real mtools FAT32 volume on the secondary ATA channel: the kernel
+          # must enumerate both channels, reject the (non-FAT) boot image, and
+          # mount+read a file from the genuine FAT disk.
+          mkdir -p "$RUNNER_TEMP"
+          printf "Hello, LionOS read-only FAT32 over ATA PIO\r\n" > "$RUNNER_TEMP/hello.txt"
+          dd if=/dev/zero of="$RUNNER_TEMP/fs.img" bs=1M count=4 status=none
+          mkfs.fat -F 32 "$RUNNER_TEMP/fs.img"
+          mcopy -i "$RUNNER_TEMP/fs.img" "$RUNNER_TEMP/hello.txt" ::/HELLO.TXT
+          timeout 45 qemu-system-x86_64 -nographic -no-reboot -vga std \
+            -drive format=raw,file=../target/bios.img,index=0,if=ide \
+            -drive format=raw,file="$RUNNER_TEMP/fs.img",index=2,if=ide \
+            -serial file:"$RUNNER_TEMP/boot-fat.log" || true
+          grep -q "LIONOS_DRV_IDE disks=2" "$RUNNER_TEMP/boot-fat.log"        # both ATA channels enumerated
+          grep -q "LIONOS_FS_OK disk=1" "$RUNNER_TEMP/boot-fat.log"           # FAT32 volume mounted (secondary)
+          grep -q "LIONOS_FS_LS count=1" "$RUNNER_TEMP/boot-fat.log"          # root dir walk found the file
+          grep -q "LIONOS_FS_READ name=HELLO.TXT bytes=44 head=000000006c6c6548" "$RUNNER_TEMP/boot-fat.log" # 44 bytes, first-4 "Hell"
+          echo "PASS: read-only FAT32 mounted + listed + byte-read a real file over ATA PIO"
 
       - name: Boot smoke test (negative — must FAIL when marker is wrong)
         working-directory: kernel
