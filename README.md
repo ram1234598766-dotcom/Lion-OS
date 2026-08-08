@@ -207,7 +207,7 @@ unit-tested, and fuzzed.
 - [x] **Task 4 detect drivers** — AHCI, NVMe, e1000, RTL8139, UHCI, EHCI, HPET,
       IOAPIC, Bochs-VBE (each pure core host-tested + `LIONOS_DRV_*` marker;
       e1000 + I/O APIC are real `found=1` on QEMU)
-- [x] `v0.3.0` release + GHCR `lion:v0.3.0`
+- [x] `v0.3.1` release + GHCR `lion:v0.3.1`
 
 ### In Progress
 
@@ -233,7 +233,7 @@ unit-tested, and fuzzed.
 | Launcher CLI (run/doctor/update) | ✅ | v0.1.0 | cross-platform |
 | Parser unit tests + fuzzing | ✅ | v0.1.0 | 16 tests, no crashes |
 | C + asm integration | ✅ | v0.1.0 | `[ffi]` boot diagnostic + CI |
-| GHCR container image | ✅ | v0.3.0 | `ghcr.io/.../lion:v0.3.0` |
+| GHCR container image | ✅ | v0.3.0 | `ghcr.io/.../lion:v0.3.1` |
 | Interrupts (IDT/PIC/PIT/keyboard) | ✅ | v0.2.0 | IRQ_FLAGS / TIMER_TICKS / IRQ_OK |
 | Frame-backed heap + frame allocator | ✅ | v0.2.0 | `#[global_allocator]`, HEAP_OK / FRAMES |
 | Page-table **takeover** (own PML4 + CR3) | ✅ | v0.2.0 | TAKEOVER cr3= … owned=1 |
@@ -478,7 +478,7 @@ LIONOS_INIT_OK
 ### Docker Alternative
 
 ```bash
-docker run --rm ghcr.io/ram1234598766-dotcom/lion-os/lion:v0.3.0
+docker run --rm ghcr.io/ram1234598766-dotcom/lion-os/lion:v0.3.1
 ```
 
 (Uses QEMU inside the container and streams serial output to the terminal.)
@@ -503,7 +503,7 @@ lionos run        # boots the kernel in QEMU
 ### Method 2 — Containers (GHCR)
 
 ```bash
-docker run --rm ghcr.io/ram1234598766-dotcom/lion-os/lion:v0.3.0
+docker run --rm ghcr.io/ram1234598766-dotcom/lion-os/lion:v0.3.1
 ```
 
 ### Method 3 — From source
@@ -1149,7 +1149,7 @@ kernel integration.
 - [x] Read-only FAT32 over real block I/O (ATA PIO + virtio-blk detect;
       mtools image, byte-identical read)
 - [x] Task-4 detect set: AHCI/NVMe/e1000/RTL8139/UHCI/EHCI/HPET/IOAPIC/VBE
-- [x] GHCR `lion:v0.3.0` tagged release
+- [x] GHCR `lion:v0.3.1` tagged release
 
 ### Version 0.4 — Userland foundations
 
@@ -1187,6 +1187,27 @@ kernel integration.
 ---
 
 ## Changelog
+
+### [v0.3.1] — Month 3 follow-ups
+
+#### Added
+
+- **virtio-blk real virtqueue** — modern virtio-pci: capability parse,
+  `VIRTIO_F_VERSION_1` negotiate, split etc-ring over 4 frames + `read_sector`
+  submit/poll; read-only FAT32 mounts and reads over a real virtio disk
+  (`LIONOS_FS_VIRTIO_OK/LS/READ`).
+- **FAT LFN + subdirectories** — `DirEntry.long_name`/`is_dir`, LFN-chain
+  reconstruction (`String::from_utf16_lossy`), and `fs::read_path/ls_path`
+  descent into `/`-paths (case-insensitive long-or-short match).
+- **Real device registers** — `drivers/mmio.rs` + `pci::bar_addr`; the Task-4
+  drivers now read genuine AHCI/NVMe/e1000/RTL8139/UHCI/EHCI/HPET/IOAPIC/VBE
+  registers (IOAPIC `irqs=24 raw=0x00170020` on QEMU).
+- **Scheduler fix** — task idle must busy-`pause()`-pump (not `hlt`) so the
+  deferred-switch round-robin keeps circulating under the `-O1` used to fit the
+  larger kernel image (was stalling after the first switch; now
+  `LIONOS_SCHED tasks=3 switches=4`).
+- **CI toolchain** — Zig 0.14 + g++ added to every job that builds the kernel
+  (`kernel-boot`, `publish`, `launcher e2e`), fixing the post-C++/Zig gap.
 
 ### [v0.3.0] — Month 3
 
