@@ -25,10 +25,9 @@
 > PIT, and a **read-only FAT32** filesystem over real block I/O — with C++17
 > and Zig joined to the FFI language lay.
 >
-> **Honest platform note:** this is the **x86_64 (Track PC)** line, booting under
-> QEMU — UEFI/real-PC boot and the **Android/arm64 (Track A)** target are
-> future, not shipped (see [`docs/android.md`](docs/android.md) for the real
-> status).
+> **Platform note:** this repo is the **x86_64 (Desktop)** line, booting under
+> QEMU. The ARM64 **Android** port is a separate codebase with its own
+> release line — see [`lion-os-android`](https://github.com/ram1234598766-dotcom/lion-os-android).
 
 ---
 
