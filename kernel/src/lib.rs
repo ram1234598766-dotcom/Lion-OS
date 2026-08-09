@@ -26,6 +26,7 @@ extern crate std;
 pub mod ai;
 pub mod dock;
 pub mod drivers;
+pub mod elf;
 pub mod editor;
 pub mod explorer;
 pub mod ffi;

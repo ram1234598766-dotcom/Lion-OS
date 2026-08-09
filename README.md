@@ -1157,9 +1157,9 @@ kernel integration.
 
 - [x] `syscall`/`sysret` + entry/exit path — `STAR`/`LSTAR`/`SFMASK` + `EFER.SCE`,
       `LIONOS_SYSCALL_MSR`, `LIONOS_USER_CS=…2b` (ring-3 → kernel → ring-3)
-- [x] Ring 3 + first user-mode run — `iretq` descent + a hand-encoded stub that
-      round-trips 4 syscalls (`LIONOS_USER_DROP` / `LIONOS_USER_CALLS=4`);
-      **ELF loader is the open follow-up**
+- [x] Ring 3 + user mode — `iretq` descent; the user program is now a **real
+      ELF loaded by `elf.rs`** (`user/` crate, fixed U/S tables, entry map +
+      NX stack) — `LIONOS_USER_CS=…2b`, `SHELL_READ/WROTE`, `USER_CALLS=6`
 - [x] IPC + minimal shell — a kernel `Mailbox` (`ipc.rs`) + `SYS_RECV`/`SYS_SEND`;
       the ring-3 shell `recv`s a seeded message and `send`s an ack
       (`LIONOS_SHELL_READ n=4 head=…LiOS…`, `LIONOS_SHELL_WROTE n=3`).
@@ -1203,8 +1203,15 @@ kernel integration.
 
 ## Changelog
 
-### [Unreleased] — post-v1.0.0 hardening
+### [Unreleased] — post-v1.0.0 (ELF loader + hardening)
 
+- **ELF loader** — the ring-3 user program is now a **real compiled ELF**
+  (`user/` crate) embedded and loaded by `kernel/src/elf.rs` + `user.rs`:
+  parses `PT_LOAD` segments, maps them as user pages (exec code / NX stack)
+  into a fresh U/S table region, and descends to the ELF entry. Replaces the
+  hand-encoded byte stub. Boot markers unchanged (`LIONOS_USER_CS=…2b`, `SHELL_READ/WROTE`,
+  `USER_CALLS=6`). `user/linker.ld` links at a relative base; the loader offsets
+  by a runtime free region so the user tables are U/S at every level.
 - **NX on user data pages** — `paging::map_user_data` sets the NX leaf bit on
   the ring-3 stack; boot marker `LIONOS_SEC_CAPS nx=1`. SMEP/SMAP deferred (the
   CR4 write stalls the bring-up; see `docs/SECURITY.md`).

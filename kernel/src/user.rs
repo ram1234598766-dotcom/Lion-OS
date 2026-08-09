@@ -14,39 +14,9 @@ use crate::gdt;
 use crate::paging;
 use crate::syscall;
 
-/// The ring-3 program, hand-assembled (64-bit, no relocations, no memory ops):
-///   48 8c c8              mov rax, cs            ; prove we are ring3
-///   48 89 c7              mov rdi, rax           ; CS -> arg0
-///   48 c7 c0 03 00 00 00  mov rax, 3             ; SYS_GETC (echo CS)
-///   0f 05                 syscall
-///   48 c7 c0 01 00 00 00  mov rax, 1             ; SYS_PUTC
-///   48 c7 c7 41 00 00 00  mov rdi, 65            ; 'A'
-///   0f 05                 syscall
-///   48 c7 c0 05 00 00 00  mov rax, 5             ; SYS_SLEEP
-///   48 c7 c7 04 00 00 00  mov rdi, 4
-///   0f 05                 syscall
-///   48 c7 c0 00 00 00 00  mov rax, 0             ; SYS_EXIT
-///   0f 05                 syscall
-///   eb fe                 jmp $                  ; park in ring3
-const USER_PROGRAM: &[u8] = &[
-    0x48, 0x8c, 0xc8, // mov rax, cs
-    0x48, 0x89, 0xc7, // mov rdi, rax
-    0x48, 0xc7, 0xc0, 0x03, 0x00, 0x00, 0x00, // mov rax, SYS_GETC
-    0x0f, 0x05, // syscall
-    0x48, 0xc7, 0xc0, 0x01, 0x00, 0x00, 0x00, // mov rax, SYS_PUTC
-    0x48, 0xc7, 0xc7, 0x41, 0x00, 0x00, 0x00, // mov rdi, 'A'
-    0x0f, 0x05, // syscall
-    0x48, 0xc7, 0xc0, 0x05, 0x00, 0x00, 0x00, // mov rax, SYS_SLEEP
-    0x48, 0xc7, 0xc7, 0x04, 0x00, 0x00, 0x00, // mov rdi, 4
-    0x0f, 0x05, // syscall
-    0x48, 0xc7, 0xc0, 0x06, 0x00, 0x00, 0x00, // mov rax, SYS_RECV (shell reads mailbox)
-    0x0f, 0x05, // syscall
-    0x48, 0xc7, 0xc0, 0x07, 0x00, 0x00, 0x00, // mov rax, SYS_SEND (shell writes ack)
-    0x0f, 0x05, // syscall
-    0x48, 0xc7, 0xc0, 0x00, 0x00, 0x00, 0x00, // mov rax, SYS_EXIT
-    0x0f, 0x05, // syscall
-    0xeb, 0xfe, // jmp $
-];
+/// The ring-3 program is now a real user ELF embedded into the kernel (built by
+/// `build.rs` from the `user/` crate and loaded via `crate::elf`, replacing the
+/// former hand-encoded byte stub).
 
 /// Bring up the first ring-3 process. Returns `false` (boot continues, e.g. the
 /// scheduler idle loop) if the CPU has no `syscall`/`sysret` or no free low
@@ -65,30 +35,58 @@ pub unsafe fn bring_up() -> bool {
 
     let offset = paging::phys_offset();
 
-    // 1. A free region in the LOW (non-canonical) half — reachable from ring 3.
-    let idx = paging::find_free_top_index(offset).expect("no free region for user");
-    if idx >= 256 {
+    // 1. Load the embedded user program — a real non-PIE ELF (the `user`
+    //    crate), replacing the old hand-encoded byte stub. Parse its PT_LOAD
+    //    segments + entry, then map them into the ring-3 address space.
+    let elf_bytes: &[u8] = include_bytes!(env!("USER_ELF"));
+    // Pick a fresh, user-owned ring-3 region (so its tables are U/S at every
+    // level). A fixed base can collide with a supervisor PML4 entry and fault
+    // e=0x15 on the first user fetch, so the loader offsets the ELF's relative
+    // VAs by this runtime `base`.
+    let base_idx = paging::find_free_top_index(offset).expect("no free user region");
+    if base_idx >= 256 {
         crate::serial::write_str("LIONOS_USER_NO_LOW_REGION\r\n");
         return false;
     }
-    let user_base = (idx as u64) << 39; // page-aligned low-half virtual
-    let user_stack_top = user_base + 0x2000; // stack page at base + 0x1000
-
-    // 2. Two user pages: code (with the stub) and a stack, both U/S + writable.
-    let code_phys = crate::frames::allocate_frame().expect("user code frame") * 4096;
-    let stack_phys = crate::frames::allocate_frame().expect("user stack frame") * 4096;
-    // SAFETY: `user_base`/`user_base+0x1000` are page-aligned and unmapped.
-    crate::paging::map_user_page(offset, user_base, code_phys).expect("map code");
-    // The user stack is a DATA page — map it No-Execute (NX) so ring-3 code
-    // cannot be (mis)loaded to run from the stack.
-    crate::paging::map_user_data(offset, user_base + 0x1000, stack_phys).expect("map stack");
-    // Copy the program into the code page via the physical-memory window.
-    // SAFETY: `code_phys + offset` is the mapped code frame; USER_PROGRAM fits.
-    crate::ffi::memcpy(
-        (code_phys + offset) as *mut u8,
-        USER_PROGRAM.as_ptr(),
-        USER_PROGRAM.len(),
-    );
+    let base = (base_idx as u64) << 39;
+    let entry_off = crate::elf::entry_point(elf_bytes).expect("user ELF entry");
+    let entry_va = base + entry_off;
+    let mut segs = alloc::vec::Vec::new();
+    crate::elf::load_segments(elf_bytes, &mut segs);
+    if segs.is_empty() {
+        crate::serial::write_str("LIONOS_ELF_NO_SEGMENTS\r\n");
+        return false;
+    }
+    let mut max_end: u64 = 0;
+    for s in &segs {
+        let pages = (s.memsz + 4095) / 4096;
+        for i in 0..pages {
+            let vaddr = base + s.vaddr + (i as u64) * 4096;
+            let f = crate::frames::allocate_frame().expect("user seg frame") * 4096;
+            // SAFETY: `vaddr` is in the fresh user region, page-aligned.
+            let r = if s.writable() {
+                crate::paging::map_user_data(offset, vaddr, f)
+            } else {
+                crate::paging::map_user_page(offset, vaddr, f)
+            };
+            r.expect("map user PT_LOAD");
+            // Copy this page's share of the segment's file bytes into the page.
+            let file_start = s.file_off + i * 4096;
+            let n = s.filesz.saturating_sub(i * 4096).min(4096);
+            if n > 0 {
+                // SAFETY: `vaddr` is now mapped user-writable; src..+n is in the
+                // embedded ELF slice.
+                let src = elf_bytes.as_ptr().add(file_start);
+                core::ptr::copy_nonoverlapping(src, vaddr as *mut u8, n);
+            }
+        }
+        max_end = max_end.max(s.vaddr + s.memsz as u64);
+    }
+    // 2. A dedicated user NX stack just above the program image.
+    let user_stack_page = base + ((max_end + 0xFFF) & !0xFFF);
+    let stack_f = crate::frames::allocate_frame().expect("user stack frame") * 4096;
+    crate::paging::map_user_data(offset, user_stack_page, stack_f).expect("map user stack");
+    let user_stack_top = user_stack_page + 0x1000;
 
     // 3. A dedicated kernel stack for the syscall entry path (and ring-3 IRQs).
     let kstack = alloc::boxed::Box::<[u8; 8192]>::leak(alloc::boxed::Box::new([0u8; 8192]));
@@ -125,17 +123,17 @@ pub unsafe fn bring_up() -> bool {
     let user_cs = (gdt::USER_CODE as u64) | 3;
     let user_ss = (gdt::USER_DATA as u64) | 3;
     crate::serial::write_str("LIONOS_USER_DROP rip=");
-    crate::serial::write_hex(user_base);
+    crate::serial::write_hex(entry_va);
     crate::serial::write_str(" cs=");
     crate::serial::write_hex(user_cs);
     crate::serial::write_str(" rsp=");
     crate::serial::write_hex(user_stack_top);
     crate::serial::write_str("\r\n");
 
-    // SAFETY: `user_base` is an executable user (page-flags U/S) code page; the
-    // stack lives in the second user page. Interrupts are OFF in ring 3.
+    // SAFETY: `entry_va` is the mapped executable user code page; the stack is
+    // the NX user page just above. Interrupts are OFF in ring 3.
     crate::ffi::cli();
-    crate::ffi::usermode_go(user_base, user_stack_top, user_cs, user_ss, 0x2);
+    crate::ffi::usermode_go(entry_va, user_stack_top, user_cs, user_ss, 0x2);
 
     loop {} // type-unifying never path (long jumps to ring 3 actually)
 }

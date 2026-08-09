@@ -188,4 +188,24 @@ fn main() {
     objects.push(zig_obj);
 
     link_ffi(&objects, &out);
+
+    // Build the ring-3 `user` program (a standalone non-PIE ELF) and expose its
+    // path so the kernel can embed it. `user/` is its own workspace with its own
+    // target dir, so invoking cargo here is safe (no shared target lock).
+    let cargo = std::env::var("CARGO").unwrap_or_else(|_| "cargo".to_string());
+    let kernel_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let manifest = kernel_dir.join("../user/Cargo.toml");
+    let status = std::process::Command::new(&cargo)
+        .args(["build", "--release", "--manifest-path"]).arg(&manifest)
+        .args(["--target", "x86_64-unknown-none"])
+        .env("CARGO_TARGET_DIR", kernel_dir.join("../user/target"))
+        .status()
+        .expect("failed to spawn the user-crate build");
+    assert!(status.success(), "building the user crate failed");
+    let src = kernel_dir.join("../user/target/x86_64-unknown-none/release/user");
+    let dst = out.join("user_elf.bin");
+    std::fs::copy(&src, &dst).expect("copy the user ELF into OUT_DIR");
+    println!("cargo:rustc-env=USER_ELF={}", dst.display());
+    println!("cargo:rerun-if-changed={}", kernel_dir.join("../user/src/main.rs").display());
+    println!("cargo:rerun-if-changed={}", kernel_dir.join("../user/linker.ld").display());
 }
