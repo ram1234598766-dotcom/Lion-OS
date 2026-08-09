@@ -1157,8 +1157,8 @@ kernel integration.
       NX stack) — `LIONOS_USER_CS=…2b`, `SHELL_READ/WROTE`, `USER_CALLS=6`
 - [x] IPC + minimal shell — a kernel `Mailbox` (`ipc.rs`) + `SYS_RECV`/`SYS_SEND`;
       the ring-3 shell `recv`s a seeded message and `send`s an ack
-      (`LIONOS_SHELL_READ n=4 head=…LiOS…`, `LIONOS_SHELL_WROTE n=3`).
-      *(copy_to_user of buffers deferred to the ELF-loader follow-up)*
+      (`LIONOS_SHELL_READ n=4 head=…LiOS…`, `LIONOS_SHELL_WROTE n=3`); user→kernel
+      data passing via `SYS_PUTS` bounds-checked `copy_from_user` (stac/clac under SMAP).
 - [x] `SECURITY.md` + `checksec` audit (see `docs/SECURITY.md`; hardening
       follow-ups tracked there)
 

@@ -1,15 +1,15 @@
 //! IPC mailbox — Month 4, userland.
 //!
-//! A small kernel-side message channel for ring-3 ↔ kernel IPC. For this first
-//! milestone the mailbox is a fixed 64-byte buffer that `send` fills and
-//! `recv`/`drain` takes from. The ring-3 "shell" drives it through `SYS_SEND` /
-//! `SYS_RECV` (see `syscall.rs`), and the handlers print the carried bytes, so
-//! a message demonstrably passes through the kernel.
+//! A small kernel-side message channel for ring-3 ↔ kernel IPC. The mailbox is
+//! a fixed 64-byte buffer that `send` fills and `recv`/`drain` takes from. The
+//! ring-3 "shell" drives it through `SYS_SEND` / `SYS_RECV` (see `syscall.rs`),
+//! and the handlers print the carried bytes, so a message demonstrably passes
+//! through the kernel.
 //!
 //! The pure `Mailbox` core is host-tested; the syscall wiring is
-//! `#[cfg(target_os = "none")]`. Copying in/out of *user* buffers (classic
-//! `copy_from_user`/`copy_to_user` validating a user pointer) is deferred to
-//! the ELF-loader follow-up — this holds the content kernel-side.
+//! `#[cfg(target_os = "none")]`. User→kernel data passing is implemented in
+//! the syscall layer (`SYS_PUTS` → `user_copy_in`, a bounds-checked
+//! `copy_from_user` guarded with `stac`/`clac` under SMAP).
 
 /// Capacity of the mailbox (bytes).
 pub const MAILBOX_CAP: usize = 64;

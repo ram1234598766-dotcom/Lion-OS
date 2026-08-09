@@ -37,6 +37,8 @@ extern "C" {
     fn lion_write_cr3(root: u64);
     fn lion_read_cr4() -> u64;
     fn lion_write_cr4(v: u64);
+    fn lion_stac();
+    fn lion_clac();
     fn lion_invlpg(addr: u64);
     fn lion_cpuid(leaf: u32, subleaf: u32, out: *mut u32);
 
@@ -194,6 +196,19 @@ pub fn read_cr4() -> u64 {
 /// enabling SMEP/SMAP changes the supervisor↔user page rules.
 pub unsafe fn write_cr4(v: u64) {
     unsafe { lion_write_cr4(v) }
+}
+
+/// Set the AC flag (open the SMAP window for a `copy_from_user`).
+/// Only valid while CR4.SMAP is set; #UD otherwise.
+pub fn stac() {
+    // SAFETY: caller ensures SMAP is enabled before calling stac/clac.
+    unsafe { lion_stac() }
+}
+
+/// Clear the AC flag (re-close the SMAP window). Pairs with [`stac`].
+pub fn clac() {
+    // SAFETY: paired with stac; SMAP-enabled kernel.
+    unsafe { lion_clac() }
 }
 
 /// Invalidate the TLB entries for the single page at `addr` (after a map/unmap

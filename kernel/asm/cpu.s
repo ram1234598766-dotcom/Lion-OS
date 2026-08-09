@@ -132,6 +132,22 @@ lion_write_cr4:
     ret
 .size lion_write_cr4,.-lion_write_cr4
 
+# void lion_stac(void) — set the AC flag (enable SMAP window for one copy).
+.global lion_stac
+.type lion_stac,@function
+lion_stac:
+    stac
+    ret
+.size lion_stac,.-lion_stac
+
+# void lion_clac(void) — clear the AC flag (re-disable SMAP window).
+.global lion_clac
+.type lion_clac,@function
+lion_clac:
+    clac
+    ret
+.size lion_clac,.-lion_clac
+
 # uint64_t lion_read_rflags(void) — snapshot of RFLAGS (e.g. IF bit 9).
 .global lion_read_rflags
 .type lion_read_rflags,@function

@@ -119,14 +119,25 @@ pub unsafe fn bring_up() -> bool {
     //     CR4 bit the CPU does not implement #GPs — QEMU's default CPU lacks
     //     SMEP/SMAP, which was the earlier boot stall — so gate on the flag.
     let feat = crate::ffi::cpuid(7, 0);
-    let smep = ((feat[1] >> 7) & 1) == 1; // CPUID.7.0:EBX bit 7
+    let smep = ((feat[1] >> 7) & 1) == 1; // CPUID.7.0:EBX bit 7 (SMEP)
+    let smap = ((feat[1] >> 20) & 1) == 1; // bit 20 (SMAP)
     let cr4 = crate::ffi::read_cr4();
-    if smep && cr4 & (1 << 20) == 0 {
-        crate::ffi::write_cr4(cr4 | (1 << 20));
+    let mut new_cr4 = cr4;
+    if smep && new_cr4 & (1 << 20) == 0 {
+        new_cr4 |= 1 << 20;
     }
+    if smap && new_cr4 & (1 << 21) == 0 {
+        new_cr4 |= 1 << 21;
+    }
+    if new_cr4 != cr4 {
+        crate::ffi::write_cr4(new_cr4);
+    }
+    syscall::set_smap(smap); // the syscall copy uses stac/clac when SMAP is on
     crate::serial::write_str("LIONOS_SEC_CAPS nx=1 smep=");
     crate::serial::write_dec(smep as u64);
-    crate::serial::write_str(" smap=0\r\n");
+    crate::serial::write_str(" smap=");
+    crate::serial::write_dec(smap as u64);
+    crate::serial::write_str("\r\n");
 
     // 4b. Seed the IPC mailbox so the ring-3 shell has a message to `recv`
     //     (stands in for input arriving from another party).

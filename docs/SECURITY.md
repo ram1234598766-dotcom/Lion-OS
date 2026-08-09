@@ -40,8 +40,10 @@
 - **SMEP is enabled when the CPU supports it** (boot `LIONOS_SEC_CAPS nx=1
   smep=0|1`); writing CR4 bits the CPU lacks #GPs (QEMU's default CPU has no
   SMEP — that was the earlier silent stall), so it is gated on CPUID.7.0:EBX.
-- **SMAP is still deferred.** Enabling it must come with `stac`/`clac` around
-  the ring-0 `copy_from_user` (SYS_PUTS), or ring-0 reads of user pages fault.
+- **SMAP is enabled when supported** (CPUID-gated, boot `.. smap=0|1`), with
+  the ring-0 `copy_from_user` (SYS_PUTS) wrapped in `stac`/`clac` so the user
+  page read is allowed under SMAP. Verified on `-cpu max` (`smap=1`, `SYS_PUTS
+  ok=1`) and clean on CPUs without SMAP (`smap=0`).
   NX-on-user-*data* pages IS enforced (`map_user_data`).
 - **No upper/lower half separation.** User allocations share the same
   global page tables as the kernel (the kernel just leaves the U/S off).
@@ -77,7 +79,8 @@ kernel runs them). A single `GNU_STACK RW` means no executable stack.
   nx=1`). The user *code* page stays W+X; the user *stack* is NX.
 - **SMEP — DONE when supported** (CPUID-gated, boot `.. smep=0|1`); on a CPU
   without SMEP (QEMU default) it stays 0 and boots fine.
-- **SMAP — open** (needs `stac`/`clac` around the SYS_PUTS `copy_from_user`).
+- **SMAP — DONE when supported** (CPUID-gated; `stac`/`clac` around the
+  SYS_PUTS `copy_from_user`; verified on `-cpu max`).
 - **Partial RELRO / no canary / no PIE** — a freestanding kernel relocates to a
   fixed low address by design; these are inherent rather than regressions, but a
   canary on the ring-0 syscall path would raise the cost of a userland exploit

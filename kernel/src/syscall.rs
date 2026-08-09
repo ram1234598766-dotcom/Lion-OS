@@ -165,6 +165,18 @@ pub fn set_user_range(start: u64, end: u64) {
     }
 }
 
+/// Whether CR4.SMAP is enabled (set by `bring_up`), so `copy_from_user` can
+/// wrap its copy in `stac`/`clac` (the SMAP window).
+#[cfg(target_os = "none")]
+static SMAP_ENABLED: core::sync::atomic::AtomicBool = core::sync::atomic::AtomicBool::new(false);
+
+/// Record whether SMAP is active (called by `user::bring_up` after the CPUID
+/// gate).
+#[cfg(target_os = "none")]
+pub fn set_smap(enabled: bool) {
+    SMAP_ENABLED.store(enabled, core::sync::atomic::Ordering::Relaxed);
+}
+
 /// Bounds-checked copy of `n` bytes from the user VA `src` into `dst`. Returns
 /// `false` if `[src, src+n)` falls outside the loaded user program's range (the
 /// classic `copy_from_user` check). Only the ring-3 caller can reach this.
@@ -178,9 +190,18 @@ fn user_copy_in(dst: &mut [u8], src: u64, n: usize) -> bool {
     if want_end > e {
         return false;
     }
-    // SAFETY: `src..+n` is within the user pages we mapped; ring-0 reads of user
-    // memory are allowed here (SMAP not enabled).
+    let smap = SMAP_ENABLED.load(core::sync::atomic::Ordering::Relaxed);
+    // With SMAP on, ring-0 reads of user pages fault unless AC is set — so open
+    // the window (stac) around the copy, then close it (clac). Without SMAP,
+    // stac/clac are skipped (they'd #UD).
+    if smap {
+        crate::ffi::stac();
+    }
+    // SAFETY: `src..+n` is within the user pages we mapped.
     unsafe { core::ptr::copy_nonoverlapping(src as *const u8, dst.as_mut_ptr(), n) };
+    if smap {
+        crate::ffi::clac();
+    }
     true
 }
 
