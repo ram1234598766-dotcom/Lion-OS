@@ -605,6 +605,13 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
     serial::write_dec(unsafe { ROTATIONS });
     serial::write_str("\r\n");
 
+    // --- Month 6: simulated AI assistant stub (no ML; canned, honest) ---
+    serial::write_raw(b"LIONOS_AI_STUB reply=\"");
+    for b in lionos_kernel::ai::answer("hello").bytes() {
+        serial::write_byte(b);
+    }
+    serial::write_str("\"\r\n");
+
     // --- Month 4: ring-3 + syscall bring-up (the last boot action) ---
     // Descend to ring 3 and round-trip a few `syscall`s. `bring_up` returns
     // false only when it could NOT descend (CPU lacks `syscall`, or no free low

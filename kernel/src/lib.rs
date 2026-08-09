@@ -23,6 +23,7 @@ extern crate alloc;
 #[cfg(test)]
 extern crate std;
 
+pub mod ai;
 pub mod drivers;
 pub mod ffi;
 pub mod frames;
