@@ -233,7 +233,7 @@ unit-tested, and fuzzed.
 | Launcher CLI (run/doctor/update) | ✅ | v0.1.0 | cross-platform |
 | Parser unit tests + fuzzing | ✅ | v0.1.0 | 16 tests, no crashes |
 | C + asm integration | ✅ | v0.1.0 | `[ffi]` boot diagnostic + CI |
-| GHCR container image | ✅ | v0.5.0 | `ghcr.io/.../lion:v0.5.0` |
+| GHCR container image | ✅ | v1.0.0 | `ghcr.io/.../lion:v1.0.0` |
 | Interrupts (IDT/PIC/PIT/keyboard) | ✅ | v0.2.0 | IRQ_FLAGS / TIMER_TICKS / IRQ_OK |
 | Frame-backed heap + frame allocator | ✅ | v0.2.0 | `#[global_allocator]`, HEAP_OK / FRAMES |
 | Page-table **takeover** (own PML4 + CR3) | ✅ | v0.2.0 | TAKEOVER cr3= … owned=1 |
@@ -247,7 +247,7 @@ unit-tested, and fuzzed.
 | AHCI/NVMe/e1000/RT/ UHCI/EHCI/HPET/IOAPIC/VBE | ✅ | v0.3.0 | detect markers, e1000 + I/O APIC found on QEMU |
 | Syscalls / user mode / shell | ✅ | v0.4.0 | SYSCALL_MSR / USER_CS=2b / SHELL_READ |
 | Graphics / compositor | ✅ | v0.5.0 | GFX_CANVAS / COMPOSITE / WALL / FOCUS |
-| Shell + AI stub / hardening | 🔮 | v1.0.0 | Month 6 |
+| Dock / theme / explorer / editor / AI stub (Path A) | ✅ | v1.0.0 | THEME/EDITOR/EXPLORER/DOCK/AI_STUB |
 
 > Legend: ✅ Complete | 🔧 In Progress | 📋 Planned | 🔮 Future
 
@@ -477,7 +477,7 @@ LIONOS_INIT_OK
 ### Docker Alternative
 
 ```bash
-docker run --rm ghcr.io/ram1234598766-dotcom/lion-os/lion:v0.5.0
+docker run --rm ghcr.io/ram1234598766-dotcom/lion-os/lion:v1.0.0
 ```
 
 (Uses QEMU inside the container and streams serial output to the terminal.)
@@ -502,7 +502,7 @@ lionos run        # boots the kernel in QEMU
 ### Method 2 — Containers (GHCR)
 
 ```bash
-docker run --rm ghcr.io/ram1234598766-dotcom/lion-os/lion:v0.5.0
+docker run --rm ghcr.io/ram1234598766-dotcom/lion-os/lion:v1.0.0
 ```
 
 ### Method 3 — From source
@@ -1180,12 +1180,13 @@ kernel integration.
 - [x] Wallpaper — `gfx::gradient_fill(canvas, tick)` vertical gradient, animated
       by advancing `tick`; `LIONOS_GFX_WALL ok`
 
-### Version 1.0 — Month 6
+### Version 1.0 — Month 6 *(shipped — Path A)*
 
 **Target:** Month 6
 
-- [~] Path A (in progress): **AI stub done** (`ai.rs`, honest no-ML canned
-      replies, `LIONOS_AI_STUB`); **dock, theming, file explorer, editor** open
+- [x] Path A **apps layer** — simulated AI stub + theme (palette `recolor`),
+      text editor (`TextBuffer`), file explorer (FAT count / `NO_DISK`), and a
+      dock app bar (theming/editor/explorer/ai)
 - [ ] (or) Path B: deepen fuzzing, bare-metal attempt, CI matrix, docs
 
 ### Long Term Goals
@@ -1201,13 +1202,18 @@ kernel integration.
 
 ## Changelog
 
-### [Unreleased] — Month 6 (v1.0.0, Path A in progress)
+### [v1.0.0] — Month 6 (Path A, shipped)
 
 #### Added
 
 - **Simulated AI assistant** (`kernel/src/ai.rs`) — honest, no-ML canned
   reply engine (case-insensitive keyword match, allocation-free); exercised at
   boot with `LIONOS_AI_STUB reply="LionOS AI ready"`.
+- **Path-A apps layer** — **theme** (`theme.rs` palette + `recolor`),
+  **editor** (`editor.rs` `TextBuffer` insert/backspace), **explorer**
+  (`explorer.rs` `dir_lines`, reports the FAT mount count / `NO_DISK`), and a
+  **dock** app bar (`dock.rs`) — `LIONOS_THEME`/`LIONOS_EDITOR`/
+  `LIONOS_EXPLORER`/`LIONOS_DOCK` markers.
 
 ### [v0.5.0] — Month 4 (userland) + Month 5 (graphics)
 
