@@ -13,17 +13,17 @@
 > A from-scratch operating system for x86_64, written in Rust with a C and
 > assembly support layer, that boots in a virtual machine with one command.
 
-> Built week-by-week against a six-month plan. Month 1 shipped (`v0.1.0`): it
-> boots a real bootloader → kernel handoff inside QEMU and validates the memory
-> map. **Month 2 shipped (`v0.2.0`):** the kernel now owns its CPU-core + memory
-> primitives — interrupts (IDT/PIC/PIT/keyboard), a frame-backed heap, the
-> **page-table takeover** (the kernel builds and switches to its own PML4), and
-> a custom GDT + TSS/IST with a double-fault stack. **Month 3 shipped (`v0.3.0`):**
-> a real driver layer (serial/framebuffer/text + keyboard/mouse/RTC/PCI/VGA/
-> speaker + **10+ real standards: ATA PIO disk, AHCI/NVMe/e1000/RTL8139/UHCI/
-> EHCI/HPET/IOAPIC/Bochs-VBE detect**), a cooperative → **preemptive scheduler**
-> driven by the PIT, and a **read-only FAT32** filesystem over real block I/O —
-> with C++17 and Zig joined to the FFI language lay.
+> **`v0.1.0` (foundation):** boots a real bootloader → kernel handoff inside
+> QEMU, validating the memory map. **`v0.2.0` (kernel-core):** the kernel owns
+> its CPU-core + memory primitives — interrupts (IDT/PIC/PIT/keyboard), a
+> frame-backed heap, the **page-table takeover** (it builds and switches to its
+> own PML4), and a custom GDT + TSS/IST with a double-fault stack.
+> **`v0.3.x` (scheduler + drivers + filesystem):** a real driver layer
+> (serial/framebuffer/text + keyboard/mouse/RTC/PCI/VGA/speaker + **10+ real
+> standards: ATA PIO disk, AHCI/NVMe/e1000/RTL8139/UHCI/EHCI/HPET/IOAPIC/
+> Bochs-VBE detect**), a cooperative → **preemptive scheduler** driven by the
+> PIT, and a **read-only FAT32** filesystem over real block I/O — with C++17
+> and Zig joined to the FFI language lay.
 >
 > **Honest platform note:** this is the **x86_64 (Track PC)** line, booting under
 > QEMU — UEFI/real-PC boot and the **Android/arm64 (Track A)** target are
@@ -84,8 +84,8 @@ application and **not yet** something you install on real hardware.
 
 ### Why This Project
 
-The goal is an honest, from-scratch OS built against a detailed six-month
-plan, one "Done when" criterion at a time — not a hollow demo. Working from
+The goal is an honest, from-scratch OS, a milestone at a time, each with a
+"Done when" criterion — not a hollow demo. Working from
 scratch means owning the full chain: toolchain, boot provider, kernel, and
 eventually memory management, interrupts, a filesystem, user mode, and
 graphics.
@@ -108,7 +108,7 @@ than hoping it works.
 
 - **Test + fuzz first.** The memory-map and framebuffer parsers are pure,
   host-testable functions (`16` unit tests) and `cargo-fuzz` targets, run with
-  no QEMU session. A regression in Month 1 fails loudly instead of silently 3
+  no QEMU session. A regression in v0.1 fails loudly instead of silently 3
   weeks later.
 - **Mixed-language from day one.** A freestanding C + assembly layer
   (`kernel/c`, `kernel/asm`) links into the Rust kernel and is exercised at
@@ -119,11 +119,11 @@ than hoping it works.
 
 ### Goals
 
-- Boot a verified bootloader → kernel handoff inside QEMU (Month 1 — done).
+- Boot a verified bootloader → kernel handoff inside QEMU (v0.1 — done).
 - Cross-platform `lionos` launcher CLI (`run` / `doctor` / `update`).
-- Kernels with memory management, interrupts, and a scheduler (Months 2–3).
-- Filesystem, user mode + syscalls, graphics/windowing (Months 3–5).
-- An honest six-month path to a usable early OS (Month 6, Path A or B).
+- Kernels with memory management, interrupts, and a scheduler (the v0.2/v0.3 releases).
+- Filesystem, user mode + syscalls, graphics/windowing (the v0.3–v0.5 releases).
+- A usable early OS (v1.0, Path A).
 
 ### Non-Goals
 
@@ -183,7 +183,7 @@ unit-tested, and fuzzed.
       at boot and asserted in CI (`[ffi]` line)
 - [x] `v0.1.0` release + GHCR container image
 
-**Month 2 (shipped, `v0.2.0`):**
+**v0.2 (shipped, `v0.2.0`):**
 - [x] Interrupt bring-up — 256-gate IDT, 8259 PIC remap, 8254 PIT timer,
       PS/2 keyboard, bounded deferred-work queue
 - [x] Kernel heap (`#[global_allocator]`, first-fit free-list) — **frame-backed**
@@ -194,7 +194,7 @@ unit-tested, and fuzzed.
 - [x] Custom GDT + 64-bit TSS/IST with a dedicated double-fault stack
 - [x] `v0.2.0` release + GHCR `lion:v0.2.0`
 
-**Month 3 (shipped, `v0.3.0`):**
+**v0.3 (shipped, `v0.3.0`):**
 - [x] Mixed-language: **C++17 + Zig** join the FFI (`liblionos_ffi.a`), magic
       smoke markers `LIONOS_CPP`/`LIONOS_ZIG` boot-verified
 - [x] **Scheduler** — cooperative yield + **PIT-driven preemptive RR** with an
@@ -219,10 +219,10 @@ unit-tested, and fuzzed.
 
 ### Shipped after v0.1.0
 
-- [x] Month 4: syscalls, ring separation, ELF loader, user + IPC shell
-- [x] Month 5: graphics, compositor, wallpaper
-- [x] Month 6: Path A apps (dock/theme/editor/explorer/AI stub)
-- [ ] Bare-metal boot / installer (post-6-month stretch)
+- [x] v0.5: syscalls, ring separation, ELF loader, user + IPC shell
+- [x] v0.5: graphics, compositor, wallpaper
+- [x] v1.0: Path A apps (dock/theme/editor/explorer/AI stub)
+- [ ] Bare-metal boot / installer (a post-release stretch)
 
 ### Feature Matrix
 
@@ -280,7 +280,7 @@ Demo link placeholder
 ```
 
 QEMU is the only renderer today — no graphical kernel output yet (that is
-Month 5). Grab the latest release and `lionos run` to see the serial boot.
+v0.5). Grab the latest release and `lionos run` to see the serial boot.
 
 ---
 
@@ -377,7 +377,7 @@ lion-os/
 |------|---------|---------|
 | `cargo-fuzz` / `cargo +nightly fuzz` | nightly | Fuzz the parsers |
 | `gitleaks` | 8.x | Secret scanning (pre-commit + CI) |
-| `mtools` | 6.x | Build FAT32 test images (Month 3) |
+| `mtools` | 6.x | Build FAT32 test images (v0.3) |
 | `valgrind` | 3.x | Host-side memory-safety pass on shared logic |
 | Docker | 24+ | Run the GHCR container image |
 
@@ -646,7 +646,7 @@ docker run --rm ghcr.io/ram1234598766-dotcom/lion-os/lion
 
 ### Running on Real Hardware
 
-Not yet supported. A bare-metal boot attempt is a planned Month-6 Path-B
+Not yet supported. A bare-metal boot attempt is a planned v1.0 Path-B
 milestone; today the kernel runs only under QEMU. There is no installer.
 
 > ⚠️ **Warning:** Do not flash any LionOS artifact to physical media expecting
@@ -709,7 +709,7 @@ qemu-system-x86_64 -accel tcg -no-reboot -d int,cpu_reset -D /tmp/q.log \
 grep -aE "check_exception|v=" /tmp/q.log
 ```
 
-This is how the Month-1 `cpuid` triple-fault was diagnosed: a `#PF` writing
+This is how the v0.1 `cpuid` triple-fault was diagnosed: a `#PF` writing
 `CR2=…` at a known `RIP`, then `#DF`, then reset.
 
 ### Method 3 — Disassembly
@@ -748,8 +748,8 @@ stdout; `-serial file:path` captures it to a file (what CI does).
 
 #### Enabling Logs
 
-All existing output is unconditional on serial at this stage (Month 1). A
-leveled kernel logger lands around Month 2.
+All existing output is unconditional on serial at this stage (v0.1). A
+leveled kernel logger lands around v0.2.
 
 ---
 
@@ -782,7 +782,7 @@ file; the CI job runs them with no QEMU.
 
 ### Test Coverage
 
-Coverage tooling is not wired yet (Month 4+). The main guardrail today is the
+Coverage tooling is not wired yet (v0.5+). The main guardrail today is the
 combination of host unit tests + boot smoke tests + fuzzing.
 
 ---
@@ -801,7 +801,7 @@ Host CLI (launcher) ──builds QEMU argv──▶ QEMU (BIOS/SeaBIOS)
         kernel `_start(BootInfo)` ──validates map──▶ serial diagnostics ──▶ park
 ```
 
-The plan's scope grows leftward and upward each month: memory manager,
+The plan's scope grows leftward and upward across releases: memory manager,
 interrupts, scheduler, drivers, filesystem, user mode, graphics.
 
 | Component | Description | Depends On |
@@ -844,7 +844,7 @@ interrupts, scheduler, drivers, filesystem, user mode, graphics.
 |------|-------------|------------|
 | Ring 0 | Kernel (all current code) | kernel, this entire boot path |
 | Ring 1/2 | Unused | — |
-| Ring 3 | User mode | Planned — Month 4 |
+| Ring 3 | User mode | Planned — v0.5 |
 
 ---
 
@@ -870,7 +870,7 @@ at its link address; the bootloader's page-table root is `CR3 = 0x1000`.
 
 ### Virtual Memory Map
 
-Early boot is identity-mapped by the bootloader. From the Month-2 **paging
+Early boot is identity-mapped by the bootloader. From the v0.2 **paging
 takeover** onward the kernel owns the page tables: `paging::takeover` builds its
 own PML4 (copying the bootloader's top level through the physical-memory
 window) and switches CR3 to it, and `map_page`/`map_range` add mappings (e.g.
@@ -893,12 +893,12 @@ the frame-backed heap) at fresh virtual regions.
 ### Stack Layout
 
 A stack is provided by the bootloader before `_start`. Kernel-owned stacks and
-IST (interrupt stack tables) land in Month 2.
+IST (interrupt stack tables) land in v0.2.
 
 ### Heap Management
 
 None yet. No `#[global_allocator]` — validators use fixed-size stack buffers.
-The heap allocator is a Month-2 deliverable.
+The heap allocator is a v0.2 deliverable.
 
 ---
 
@@ -915,7 +915,7 @@ Firmware (SeaBIOS) → bootloader crate → long mode + paging → `_start(BootI
 
 BIOS loads the disk image produced by the `os/` builder (bootloader 0.11.17
 `BiosBoot`). (UEFI/OVMF is not yet in the boot path; UEFI via `UefiBoot` is a
-later-month addition — the framebuffer handoff already ships on the BIOS path.)
+a later addition — the framebuffer handoff already ships on the BIOS path.)
 
 #### Responsibilities
 
@@ -946,7 +946,7 @@ the C/asm FFI bridge, then parks the CPU.
 - Print `LIONOS_MEM_MAP`, `LIONOS_HANDOFF_OK`, `[ffi]`, `LIONOS_INIT_OK`.
 - Park via the asm `hlt` stub.
 
-### Stage 4 — Month-2+ (planned)
+### Stage 4 — v0.2+ (planned)
 
 GDT/TSS/IDT, exceptions, memory manager, heap, interrupts.
 
@@ -976,7 +976,7 @@ and assembly cover the byte/CPU layer.
 ### Kernel Type
 
 Freestanding **monolithic** kernel in spirit (one privileged binary), built as
-a `lib + bin` so the pure parts are unit-testable. No user mode yet (Month 4).
+a `lib + bin` so the pure parts are unit-testable. No user mode yet (v0.5).
 
 ### Component 1 — Serial driver (`serial.rs`)
 
@@ -1033,7 +1033,7 @@ Host-side CLI that builds the QEMU arg vector and runs it.
 
 ### Overview
 
-A real driver layer lives in `kernel/src/drivers/` (Month 3), initialized by
+A real driver layer lives in `kernel/src/drivers/` (v0.3), initialized by
 `drivers::init_all()` at boot. Each driver prints a deterministic boot marker so
 a silent init failure is caught by CI. Hardware access still goes through the
 assembly/C layer (`ffi`).
@@ -1075,12 +1075,12 @@ assembly/C layer (`ffi`).
 
 ### Overview
 
-**Not yet implemented** — this is the Month-4 deliverable. `docs/SYSCALLS.md`
+**Not yet implemented** — this is the v0.5 deliverable. `docs/SYSCALLS.md`
 is scaffolded to track the design as it lands.
 
 ### Adding a System Call
 
-Defined in the Month-4 plan (calling convention, `STAR`/`LSTAR`/`SFMASK` MSRs,
+Defined in the v0.5 plan (calling convention, `STAR`/`LSTAR`/`SFMASK` MSRs,
 `syscall`/`sysret`, entry/exit path), then each syscall is documented the same
 day it is implemented.
 
@@ -1090,7 +1090,7 @@ day it is implemented.
 
 ### Overview
 
-**Not yet implemented** — a read-only FAT32 filesystem is the Month-3
+**Not yet implemented** — a read-only FAT32 filesystem is the v0.3
 deliverable. The plan calls for a block-device abstraction, `mtools`-built test
 images, and VALGRIND/`cargo-fuzz` validation of the parser on the host before
 kernel integration.
@@ -1099,7 +1099,7 @@ kernel integration.
 
 | File System | Status | Read | Write | Notes |
 |-------------|--------|------|-------|-------|
-| FAT32 | 📋 | planned | ❌ (read-only) | Month 3 |
+| FAT32 | 📋 | planned | ❌ (read-only) | v0.3 |
 
 ---
 
@@ -1107,7 +1107,6 @@ kernel integration.
 
 ### Version 0.1 — Foundation *(shipped)*
 
-**Target:** Month 1
 
 - [x] Toolchain, repo skeleton, `gitleaks`
 - [x] Kernel boots + `LIONOS_INIT_OK`, CI smoke test
@@ -1119,7 +1118,6 @@ kernel integration.
 
 ### Version 0.2 — Kernel core
 
-**Target:** Month 2
 
 - [x] IDT + PIC remap + PIT timer + PS/2 keyboard + deferred work queue (boots; `LIONOS_IRQ_FLAGS`/`LIONOS_TIMER_TICKS`/`LIONOS_IRQ_OK`)
 - [x] Kernel heap: `#[global_allocator]` free-list allocator + accounting (boots; `LIONOS_HEAP_OK`, `Vec`/`Box` exercised)
@@ -1140,7 +1138,6 @@ kernel integration.
 
 ### Version 0.3 — Scheduler, drivers, filesystem *(shipped)*
 
-**Target:** Month 3
 
 - [x] Driver layer (serial+lock, framebuffer primitives/text) + extras
       (keyboard/mouse/RTC/PCI/VGA/speaker/face-id)
@@ -1153,7 +1150,6 @@ kernel integration.
 
 ### Version 0.4 — Userland foundations
 
-**Target:** Month 4
 
 - [x] `syscall`/`sysret` + entry/exit path — `STAR`/`LSTAR`/`SFMASK` + `EFER.SCE`,
       `LIONOS_SYSCALL_MSR`, `LIONOS_USER_CS=…2b` (ring-3 → kernel → ring-3)
@@ -1169,7 +1165,6 @@ kernel integration.
 
 ### Version 0.5 — Graphics *(shipped)*
 
-**Target:** Month 5
 
 - [x] Double buffering — safe `gfx::Canvas` + `BackBuffer`/`present`
       (`LIONOS_GFX_CANVAS ok`, `LIONOS_GFX_DBLBUF present=`)
@@ -1181,9 +1176,8 @@ kernel integration.
 - [x] Wallpaper — `gfx::gradient_fill(canvas, tick)` vertical gradient, animated
       by advancing `tick`; `LIONOS_GFX_WALL ok`
 
-### Version 1.0 — Month 6 *(shipped — Path A)*
+### Version 1.0 — Apps (Path A) *(shipped)*
 
-**Target:** Month 6
 
 - [x] Path A **apps layer** — simulated AI stub + theme (palette `recolor`),
       text editor (`TextBuffer`), file explorer (FAT count / `NO_DISK`), and a
@@ -1221,7 +1215,7 @@ kernel integration.
   fixing the earlier CR4 `#GP` stall on QEMU's default CPU; SMAP stays deferred
   until `copy_from_user` gets `stac`/`clac` (see `docs/SECURITY.md`).
 
-### [v1.0.0] — Month 6 (Path A, shipped)
+### [v1.0.0] — apps (Path A)
 
 #### Added
 
@@ -1234,7 +1228,7 @@ kernel integration.
   **dock** app bar (`dock.rs`) — `LIONOS_THEME`/`LIONOS_EDITOR`/
   `LIONOS_EXPLORER`/`LIONOS_DOCK` markers.
 
-### [v0.5.0] — Month 4 (userland) + Month 5 (graphics)
+### [v0.5.0] — userland + graphics
 
 #### Added
 
@@ -1250,12 +1244,11 @@ kernel integration.
 - **IPC mailbox + shell** — a bounded kernel `Mailbox` (`ipc.rs`) behind
   `SYS_RECV`/`SYS_SEND`; the ring-3 shell `recv`s a seeded message and `send`s
   an ack (`LIONOS_SHELL_READ`/`LIONOS_SHELL_WROTE`).
-- **Month-5 graphics foundation** — a safe, bounds-checked `gfx::Canvas`
+- **v0.5 graphics foundation** — a safe, bounds-checked `gfx::Canvas`
   (host-tested `set_pixel`/`fill_rect`/`clear`/`blit`) + a `BackBuffer` that
   `present`s onto the front (`LIONOS_GFX_CANVAS ok`,
-  `LIONOS_GFX_DBLBUF present=6912`). (docs
-  `superpowers/plans/2026-08-09-month5-graphics.md`.)
-- **Month-5 compositor + input + wallpaper** — `gfx::Window` + `paint_scene`
+  `LIONOS_GFX_DBLBUF present=6912`).
+- **v0.5 compositor + input + wallpaper** — `gfx::Window` + `paint_scene`
   (painter z-order with clipping), `gfx::focus` (top-most window at a cursor,
   routing), and an animated `gfx::gradient_fill(canvas, tick)` wallpaper
   (`LIONOS_GFX_COMPOSITE nwins=2`, `LIONOS_GFX_FOCUS win=1`, `LIONOS_GFX_WALL ok`).
@@ -1267,7 +1260,7 @@ kernel integration.
 - SMAP (needs `stac`/`clac` around `copy_from_user`) + a kernel canary —
   hardening only, tracked in `docs/SECURITY.md`.
 
-### [v0.3.1] — Month 3 follow-ups
+### [v0.3.1] — scheduler + drivers follow-ups
 
 #### Added
 
@@ -1288,7 +1281,7 @@ kernel integration.
 - **CI toolchain** — Zig 0.14 + g++ added to every job that builds the kernel
   (`kernel-boot`, `publish`, `launcher e2e`), fixing the post-C++/Zig gap.
 
-### [v0.3.0] — Month 3
+### [v0.3.0] — scheduler, drivers, filesystem
 
 #### Added
 
@@ -1336,35 +1329,35 @@ kernel integration.
 - Host suite now **105 tests** (was 76); CI greps the new ATA/FS, Task-4,
   scheduler, C++ and Zig markers and boots a FAT32 second drive.
 
-### [v0.2.0] — Month 2
+### [v0.2.0] — kernel core
 
 #### Added
 
 - C + assembly integration into the kernel (`c/support.c`, `asm/cpu.s`,
   `build.rs`, `src/ffi.rs`), exercised at boot and asserted in CI.
 - `[ffi]` boot diagnostic (cr3/cpuid/memset/memcpy/vendor).
-- **Month 1 NASM + C string language lay** (`asm/port_io.asm`,
+- **v0.1 NASM + C string language lay** (`asm/port_io.asm`,
   `cpu_utils.asm`, `c/string_utils.c`): the master-plan's NASM port-I/O/CPU-utils
   routines + C string helpers, coexisting with the GAS layer. Markers
   `LIONOS_NASM …`, `LIONOS_C_STR`, `LIONOS_C_MEMMOVE`. CI runner moved off the
   retired `macos-13` to `macos-15-intel`.
-- **Month 2 interrupt bring-up:** 256-gate IDT (hand-rolled gates,
+- **v0.2 interrupt bring-up:** 256-gate IDT (hand-rolled gates,
   `extern "x86-interrupt"` handlers, structured `LIONOS_FAULT` diagnostics),
   8259 PIC remap to vectors 0x20+, 8254 PIT timer (100 Hz), PS/2 keyboard
   IRQ, and a bounded deferred-work queue drained from the idle loop.
   Boot markers: `LIONOS_IRQ_FLAGS=…` (IF=1), `LIONOS_TIMER_TICKS=…`,
   `LIONOS_IRQ_OK`. CI asserts all three.
-- **Month 2 heap (frame-backed):** hand-rolled first-fit free-list allocator
+- **v0.2 heap (frame-backed):** hand-rolled first-fit free-list allocator
   backing `#[global_allocator]` (`Vec`/`Box`/`String`). The arena is now drawn
   from physical frames mapped into a fresh 512 GiB region (`paging::map_range`)
   instead of a baked `.bss` array — the concrete payoff of owning the page
   tables. Boot marker `LIONOS_HEAP_OK cap=… used=… sum=… box=…`.
-- **Month 2 frame allocator:** `kernel/src/frames.rs` — pure-accounting
+- **v0.2 frame allocator:** `kernel/src/frames.rs` — pure-accounting
   physical frame allocator over the validated usable regions (free-list of
   frame runs, split/merge, `_end`-based floor so kernel/bootloader frames are
   never handed out). Boot markers `LIONOS_FRAMES total=…` and
   `LIONOS_FRAME_ALLOC phys=…`.
-- **Month 2 paging foundation + TAKEOVER (the M2W3c unblock):**
+- **v0.2 paging foundation + TAKEOVER (the M2W3c unblock):**
   `kernel/src/paging.rs` — 4-level page-index/PTE helpers, then
   `takeover()`: the kernel enables `mappings.physical_memory` in its
   `BootloaderConfig`, uses `BootInfo.physical_memory_offset` as a window over
@@ -1372,7 +1365,7 @@ kernel integration.
   its physical address. `map_page` / `translate` / `map_range` map frames on
   demand. Boot markers `LIONOS_TAKEOVER cr3=… owned=1` and
   `LIONOS_MAP_RW back=deadbeefcafef00d phys_ok=1` (map → write → read → translate).
-- **Month 2 GDT + TSS/IST:** `gdt::setup()` installs a custom GDT + 64-bit TSS
+- **v0.2 GDT + TSS/IST:** `gdt::setup()` installs a custom GDT + 64-bit TSS
   with `IST0` = a dedicated double-fault stack (frames mapped writable via
   paging); `ltr` loads the TSS and the IDT double-fault gate (0x08) selects
   IST1 — a fault inside a fault handler now runs on its own stack. Boot marker
@@ -1385,7 +1378,7 @@ kernel integration.
 - The boilerplate's `cpuid_query` had the same EDX-clobber bug — not copied
   verbatim; parked `&eax`/`&ebx` in `r10`/`r11` before `cpuid`.
 
-### [v0.1.0] — Month 1
+### [v0.1.0] — foundation
 
 #### Added
 
@@ -1401,7 +1394,7 @@ kernel integration.
 
 ## Performance
 
-Not yet benchmarked (baselines land in Month 2 memory/stress work). What we do
+Not yet benchmarked (baselines land in v0.2 memory/stress work). What we do
 measure today is fuzz throughput / parser robustness:
 
 ### Benchmarks
@@ -1418,12 +1411,12 @@ measure today is fuzz throughput / parser robustness:
 | Component | Usage | Notes |
 |-----------|-------|-------|
 | Kernel | ~130 KB image | small freestanding kernel |
-| Heap | none | no allocator yet (Month 2) |
+| Heap | none | no allocator yet (v0.2) |
 
 ### Optimization Notes
 
 - Optimization is deliberately deferred — correctness, tests, and fuzzing come
-  first (Months 1 behavior). Consistent with the plan.
+  first (v0.1 behavior). Consistent with the plan.
 
 ---
 
@@ -1434,7 +1427,7 @@ measure today is fuzz throughput / parser robustness:
 | 1 | Framebuffer (GOP) handoff not wired (bootloader 0.11.17 field absent) | Medium | Open | Scaffold validator; upgrade bootloader at M2/M3 |
 | 2 | `core::fmt` at boot historically triple-faulted | High (historical) | Fixed | Raw port printing (`serial.rs`) |
 | 3 | `macos-13` Intel CI runners can queue long | Low | Open | Intel job kept separate; consider dropping Intel |
-| 4 | No heap / alloc / interrupts yet | By design | — | Planned Month 2 |
+| 4 | No heap / alloc / interrupts yet | By design | — | Planned v0.2 |
 
 ---
 
@@ -1501,12 +1494,12 @@ clobber (e.g. `%r8`) before executing.
 
 #### What is LionOS right now?
 
-A Month-1 kernel: it boots a real bootloader → kernel handoff inside QEMU,
+A v0.1 kernel: it boots a real bootloader → kernel handoff inside QEMU,
 prints validated memory-map + a C/asm diagnostic over serial, and parks.
 
 #### Is it a usable OS?
 
-Not yet — no user mode, filesystem, or GUI. Those are Months 2–6.
+Not yet — no user mode, filesystem, or GUI. Those are the v0.2–v1.0 releases.
 
 #### Can I install it on real hardware?
 
@@ -1721,12 +1714,12 @@ serial output, and what you expected vs. saw.
 
 ### Feature Requests
 
-Include: the month-priority it serves, expected behavior, and an acceptance
+Include: the release it serves, expected behavior, and an acceptance
 criterion (a "Done when" line).
 
 ### Development Workflow
 
-Week-based against the six-month plan in `docs/ARCHITECTURE.md`; each week's
+Week-based against the the original roadmap in `docs/ARCHITECTURE.md`; each week's
 deliverables must meet their "Done when" criterion before moving on.
 
 ### Code of Conduct
@@ -1757,7 +1750,7 @@ security-first (fuzzing, validation, secret scanning) by design.
 - Firmware data is validated as untrusted.
 - QEMU argv built without shell interpolation.
 - Downloads SHA-256-verified before boot.
-- Syscall permission model documented at Month 4 (`SECURITY.md`).
+- Syscall permission model documented at v0.5 (`SECURITY.md`).
 
 ---
 
@@ -1842,7 +1835,7 @@ To everyone writing an OS and documenting it honestly.
 
 *A from-scratch x86_64 OS in Rust — C and assembly where it earns its keep.*
 
-*Month 1 done: boots, validates, fuzzes, ships.*
+*v0.1 done: boots, validates, fuzzes, ships.*
 
 [Architecture](docs/ARCHITECTURE.md) · [Dev Setup](docs/DEV_SETUP.md) · [Releases](https://github.com/ram1234598766-dotcom/Lion-OS/releases)
 
