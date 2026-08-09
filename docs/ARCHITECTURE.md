@@ -268,4 +268,22 @@ CPL3, and device pages are mapped supervisor-only. Anything not yet enforced
 **Earliest board** it is exercised on: a ring-3 stub that `syscalls` once and
 returns (see the plan `docs/superpowers/plans/2026-08-09-month4-userland.md`).
 
-## 5. Graphics & Window Management — *Month 5 (pending)*
+## 5. Graphics & Window Management — *Month 5*
+
+- **`gfx::Canvas`** — a safe, bounds-checked pixel plane (2/3/4 bpp) with
+  `set_pixel`/`fill_rect`/`clear`/`blit_from`; no pixel is ever written out of
+  bounds. Host-tested.
+- **`gfx::BackBuffer`** — an owned plane (`Canvas<'static>`) that `present`s by
+  blitting into a front canvas — the double-buffer.
+- **`gfx::Window` + `paint_scene`** — the compositor: flat axis-aligned windows
+  painted in list order (painter's algorithm), each `fill_rect` clipped to the
+  canvas. Moving/resizing a window = editing its fields.
+- **`gfx::focus`** — the input-routing primitive: the top-most window
+  containing a cursor `(x,y)` (fed by the PS/2 mouse driver). Returns the
+  focused window.
+- **`gfx::gradient_fill(canvas, tick)`** — an animated vertical-gradient
+  wallpaper; advancing `tick` shifts the bands.
+
+The visual output is verified by deterministic serial markers
+(`LIONOS_GFX_CANVAS/WALL/COMPOSITE/FOCUS/DBLBUF`); a real live-compositor
+window server is the Month-6 windowing step.

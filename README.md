@@ -233,7 +233,7 @@ unit-tested, and fuzzed.
 | Launcher CLI (run/doctor/update) | ✅ | v0.1.0 | cross-platform |
 | Parser unit tests + fuzzing | ✅ | v0.1.0 | 16 tests, no crashes |
 | C + asm integration | ✅ | v0.1.0 | `[ffi]` boot diagnostic + CI |
-| GHCR container image | ✅ | v0.3.0 | `ghcr.io/.../lion:v0.3.1` |
+| GHCR container image | ✅ | v0.5.0 | `ghcr.io/.../lion:v0.5.0` |
 | Interrupts (IDT/PIC/PIT/keyboard) | ✅ | v0.2.0 | IRQ_FLAGS / TIMER_TICKS / IRQ_OK |
 | Frame-backed heap + frame allocator | ✅ | v0.2.0 | `#[global_allocator]`, HEAP_OK / FRAMES |
 | Page-table **takeover** (own PML4 + CR3) | ✅ | v0.2.0 | TAKEOVER cr3= … owned=1 |
@@ -245,9 +245,8 @@ unit-tested, and fuzzed.
 | ATA PIO disk + virtio-blk detect | ✅ | v0.3.0 | `LIONOS_DRV_IDE disks=…` |
 | Read-only FAT32 (mtools-verified) | ✅ | v0.3.0 | `LIONOS_FS_OK/LS/READ`, byte-identical read |
 | AHCI/NVMe/e1000/RT/ UHCI/EHCI/HPET/IOAPIC/VBE | ✅ | v0.3.0 | detect markers, e1000 + I/O APIC found on QEMU |
-| Syscalls / user mode / shell | 📋 | v0.4.0 | Month 4 |
-| Syscalls / user mode / shell | 📋 | v0.4.0 | Month 4 |
-| Graphics / compositor | 📋 | v0.5.0 | Month 5 |
+| Syscalls / user mode / shell | ✅ | v0.4.0 | SYSCALL_MSR / USER_CS=2b / SHELL_READ |
+| Graphics / compositor | ✅ | v0.5.0 | GFX_CANVAS / COMPOSITE / WALL / FOCUS |
 | Shell + AI stub / hardening | 🔮 | v1.0.0 | Month 6 |
 
 > Legend: ✅ Complete | 🔧 In Progress | 📋 Planned | 🔮 Future
@@ -478,7 +477,7 @@ LIONOS_INIT_OK
 ### Docker Alternative
 
 ```bash
-docker run --rm ghcr.io/ram1234598766-dotcom/lion-os/lion:v0.3.1
+docker run --rm ghcr.io/ram1234598766-dotcom/lion-os/lion:v0.5.0
 ```
 
 (Uses QEMU inside the container and streams serial output to the terminal.)
@@ -503,7 +502,7 @@ lionos run        # boots the kernel in QEMU
 ### Method 2 — Containers (GHCR)
 
 ```bash
-docker run --rm ghcr.io/ram1234598766-dotcom/lion-os/lion:v0.3.1
+docker run --rm ghcr.io/ram1234598766-dotcom/lion-os/lion:v0.5.0
 ```
 
 ### Method 3 — From source
@@ -1167,7 +1166,7 @@ kernel integration.
 - [x] `SECURITY.md` + `checksec` audit (see `docs/SECURITY.md`; hardening
       follow-ups tracked there)
 
-### Version 0.5 — Graphics
+### Version 0.5 — Graphics *(shipped)*
 
 **Target:** Month 5
 
@@ -1201,7 +1200,7 @@ kernel integration.
 
 ## Changelog
 
-### [Unreleased] — Month 4 (userland, in progress)
+### [v0.5.0] — Month 4 (userland) + Month 5 (graphics)
 
 #### Added
 
