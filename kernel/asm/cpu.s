@@ -116,6 +116,22 @@ lion_write_msr:
     ret
 .size lion_write_msr,.-lion_write_msr
 
+# uint64_t lion_read_cr4(void) — current CR4 (SMEP bit 20, SMAP bit 21,…).
+.global lion_read_cr4
+.type lion_read_cr4,@function
+lion_read_cr4:
+    movq  %cr4, %rax
+    ret
+.size lion_read_cr4,.-lion_read_cr4
+
+# void lion_write_cr4(uint64_t v) — load CR4 (e.g. to set SMEP/SMAP).
+.global lion_write_cr4
+.type lion_write_cr4,@function
+lion_write_cr4:
+    movq  %rdi, %cr4
+    ret
+.size lion_write_cr4,.-lion_write_cr4
+
 # uint64_t lion_read_rflags(void) — snapshot of RFLAGS (e.g. IF bit 9).
 .global lion_read_rflags
 .type lion_read_rflags,@function

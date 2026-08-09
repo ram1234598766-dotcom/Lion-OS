@@ -35,6 +35,8 @@ extern "C" {
     fn lion_pause();
     fn lion_read_cr3() -> u64;
     fn lion_write_cr3(root: u64);
+    fn lion_read_cr4() -> u64;
+    fn lion_write_cr4(v: u64);
     fn lion_invlpg(addr: u64);
     fn lion_cpuid(leaf: u32, subleaf: u32, out: *mut u32);
 
@@ -177,6 +179,21 @@ pub fn read_cr3() -> u64 {
 pub unsafe fn write_cr3(root: u64) {
     // SAFETY: caller upholds the physical-PML4 contract above.
     unsafe { lion_write_cr3(root) }
+}
+
+/// Current `CR4` (SMEP = bit 20, SMAP = bit 21, PAE/PGE/etc).
+pub fn read_cr4() -> u64 {
+    // SAFETY: mov cr4, rax is always safe to read.
+    unsafe { lion_read_cr4() }
+}
+
+/// Load a new `CR4` value.
+///
+/// # Safety
+/// The value must leave the CPU in a consistent state (e.g. keep PAE/PGE set);
+/// enabling SMEP/SMAP changes the supervisor↔user page rules.
+pub unsafe fn write_cr4(v: u64) {
+    unsafe { lion_write_cr4(v) }
 }
 
 /// Invalidate the TLB entries for the single page at `addr` (after a map/unmap

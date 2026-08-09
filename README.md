@@ -1133,9 +1133,10 @@ kernel integration.
       region (`map_range`) instead of a baked `.bss` array
 - [x] CPU init: custom GDT + TSS/IST — dedicated double-fault stack via IST1
       (boots `LIONOS_GDT_OK ist0=…`; ltr + double-fault gate IST1)
-- [ ] QEMU integration tests (GDT/IDT, allocator stress, keyboard) — CI already
-      gates the new paging/GDT markers; a deeper integration suite lands with
-      the Month-4 refinement week
+- [x] QEMU integration gates — the CI positive-boot step asserts the GDT/TSS
+      (GDT_OK), allocator stress (HEAP_OK/FRAMES), keyboard (KBD_ARMED), paging,
+      drivers, graphics and ring-3 markers every run; a separate in-QEMU suite
+      is folded into that boot path
 
 ### Version 0.3 — Scheduler, drivers, filesystem *(shipped)*
 
@@ -1201,6 +1202,12 @@ kernel integration.
 ---
 
 ## Changelog
+
+### [Unreleased] — post-v1.0.0 hardening
+
+- **NX on user data pages** — `paging::map_user_data` sets the NX leaf bit on
+  the ring-3 stack; boot marker `LIONOS_SEC_CAPS nx=1`. SMEP/SMAP deferred (the
+  CR4 write stalls the bring-up; see `docs/SECURITY.md`).
 
 ### [v1.0.0] — Month 6 (Path A, shipped)
 

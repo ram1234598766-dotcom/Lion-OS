@@ -79,7 +79,9 @@ pub unsafe fn bring_up() -> bool {
     let stack_phys = crate::frames::allocate_frame().expect("user stack frame") * 4096;
     // SAFETY: `user_base`/`user_base+0x1000` are page-aligned and unmapped.
     crate::paging::map_user_page(offset, user_base, code_phys).expect("map code");
-    crate::paging::map_user_page(offset, user_base + 0x1000, stack_phys).expect("map stack");
+    // The user stack is a DATA page — map it No-Execute (NX) so ring-3 code
+    // cannot be (mis)loaded to run from the stack.
+    crate::paging::map_user_data(offset, user_base + 0x1000, stack_phys).expect("map stack");
     // Copy the program into the code page via the physical-memory window.
     // SAFETY: `code_phys + offset` is the mapped code frame; USER_PROGRAM fits.
     crate::ffi::memcpy(
@@ -108,6 +110,12 @@ pub unsafe fn bring_up() -> bool {
     crate::serial::write_str(" lstar=");
     crate::serial::write_hex(entry);
     crate::serial::write_str("\r\n");
+
+    // 4a. Security hardening (writes the SECURITY.md deferral): the user stack
+    //     was mapped No-Execute (`map_user_data`), so report it. (SMEP/SMAP are
+    //     intentionally NOT enabled yet — a CR4.SMEP/SMAP write stalls this
+    //     bring-up before first syscall; leave them for a dedicated follow-up.)
+    crate::serial::write_raw(b"LIONOS_SEC_CAPS nx=1\r\n");
 
     // 4b. Seed the IPC mailbox so the ring-3 shell has a message to `recv`
     //     (stands in for input arriving from another party).

@@ -37,9 +37,12 @@
 
 ## 4. NOT yet enforced (explicit)
 
-- **No SMEP/SMAP / NX on user-flagged exec pages.** We rely on `Nx`-capable
-  but the ELF/PTE setup doesn't set NX bits yet; `kernel` code pages are
-  executable. TODO at a lower number in a hardening commit.
+- **No SMEP/SMAP yet.** CR4 bits 20/21 are not set — a CR4.SMEP/SMAP write was
+  attempted during the ring-3 bring-up and **stalled the boot before the first
+  syscall** (unclear silent-hang cause), so it is deliberately deferred to a
+  dedicated hardening pass. NX-on-user-*data* pages IS now enforced
+  (`map_user_data` sets the NX leaf bit; boot marker `LIONOS_SEC_CAPS nx=1`).
+  Kernel code pages remain executable by design.
 - **No upper/lower half separation.** User allocations share the same
   global page tables as the kernel (the kernel just leaves the U/S off).
 - **No pids / no per-process page-table switch.** The scheduler is
@@ -70,9 +73,9 @@ real for the stack/CLS; code pages are executable because they must be (the
 kernel runs them). A single `GNU_STACK RW` means no executable stack.
 
 **Honest gaps → TODOs (no hardening commit yet):**
-- **No NX on user writable pages** — the ring-3 user code page is writable AND
-  executable (no `NXE` on its PTE). Enable the NX bit on user *data* pages in a
-  later hardening pass (Month 5 graphics needs it to stop marking rust-data).
+- **NX on user *data* pages — DONE** (`map_user_data`, boot `LIONOS_SEC_CAPS
+  nx=1`). The user *code* page stays W+X (it must run); the user *stack* is
+  NX. **SMEP/SMAP still open** (the CR4 write stalled the bring-up — see §4).
 - **No SMEP/SMAP** (`CR4.SMEP/SMAP` bits not set) — ring 3 cannot execute the
   kernel today only because it does not share pages and the `syscall` handler
   runs supervisor-only, not because SMEP is on. Add them when the user/kernel

@@ -149,6 +149,8 @@ jobs:
           grep -q "LIONOS_EDITOR len=" "$RUNNER_TEMP/boot-positive.log"     # text editor edited a buffer
           grep -q "LIONOS_EXPLORER files=" "$RUNNER_TEMP/boot-positive.log" # file explorer reported a count
           grep -q "LIONOS_DOCK napps=" "$RUNNER_TEMP/boot-positive.log"     # dock app bar
+          # Desktop security hardening: NX user-data page + SMEP/SMAP enabled.
+          grep -q "LIONOS_SEC_CAPS nx=1" "$RUNNER_TEMP/boot-positive.log"
           echo "PASS: handoff + fb + fmt + LIONOS_INIT_OK + C/asm + M2 IRQ + M2 heap + M2 frames + paging takeover + GDT/TSS + NASM/C-str + M3 layer + M3 ATA/FS + M3 Task-4 set + M4 ring3/syscall round trip observed on serial"
 
       - name: Boot smoke test (read-only FAT32 over ATA PIO second drive)

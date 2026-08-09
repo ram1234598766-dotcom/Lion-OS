@@ -50,6 +50,10 @@ pub const ADDR_MASK: u64 = 0x000F_FFFF_FFFF_F000;
 pub const PRESENT: u64 = 1 << 0;
 pub const WRITABLE: u64 = 1 << 1;
 pub const USER: u64 = 1 << 2;
+/// No-Execute (bit 63) — with EFER.NXE set, a page with this bit is not
+/// executable. Used on user *data* pages (stacks) so ring-3 code can't run
+/// from them. Bit 63 lies above `ADDR_MASK`, so it never disturbs the frame.
+pub const NX: u64 = 1 << 63;
 
 /// Encode a page-table entry that points at the table/frame `addr`.
 /// `addr` must be a physical address (already page-aligned; lower bits masked).
@@ -348,7 +352,7 @@ fn alloc_table(offset: u64) -> Result<u64, MapError> {
 /// already mapped; the allocator must have spare frames.
 #[cfg(target_os = "none")]
 pub unsafe fn map_page(offset: u64, virt: u64, phys: u64) -> Result<(), MapError> {
-    unsafe { map_page_impl(offset, virt, phys, false) }
+    unsafe { map_page_impl(offset, virt, phys, false, false) }
 }
 
 /// Map a single 4 KiB frame at `virt` with the **user (U/S)** bit set, so
@@ -361,18 +365,29 @@ pub unsafe fn map_page(offset: u64, virt: u64, phys: u64) -> Result<(), MapError
 /// unmapped, allocator has frames).
 #[cfg(target_os = "none")]
 pub unsafe fn map_user_page(offset: u64, virt: u64, phys: u64) -> Result<(), MapError> {
-    unsafe { map_page_impl(offset, virt, phys, true) }
+    unsafe { map_page_impl(offset, virt, phys, true, false) }
+}
+
+/// Map a user *data* page with the **No-Execute** bit set, so ring-3 code
+/// cannot jump into it (e.g. the ring-3 stack). Executable user code still uses
+/// [`map_user_page`].
+///
+/// # Safety
+/// Same contract as [`map_user_page`].
+#[cfg(target_os = "none")]
+pub unsafe fn map_user_data(offset: u64, virt: u64, phys: u64) -> Result<(), MapError> {
+    unsafe { map_page_impl(offset, virt, phys, true, true) }
 }
 
 /// Shared implementation: walk/populate the 4-level tables and write the leaf
 /// with the requested U/S bit.
 #[cfg(target_os = "none")]
-unsafe fn map_page_impl(offset: u64, virt: u64, phys: u64, user: bool) -> Result<(), MapError> {
+unsafe fn map_page_impl(offset: u64, virt: u64, phys: u64, user: bool, nx: bool) -> Result<(), MapError> {
     // IMPORTANT (x86 Intel SDM 23.6): a page is accessible to user mode only if
-    // the U/S bit is set in the LEAF **and in every upper-level page-table entry
-    // that maps it**. If the PDPT/PD/PT entries stay supervisor (U/S=0), a user
-    // fetch/write faults even when the leaf has U/S. So when mapping a user
-    // page we propagate USER onto the intermediate entries we create.
+    // the U/S bit is set in EVERY leaf AND in every upper-level page-table entry
+    // that maps it. If the PDPT/PD/PT entries stay supervisor (U/S=0), a user
+    // fetch/write faults #PF e=0x15. So when mapping a user page we propagate
+    // USER onto the intermediate entries we create.
     let ptr = |e: u64| -> u64 { e | if user { USER } else { 0 } };
 
     let pml4 = current_cr3() & ADDR_MASK;
@@ -407,8 +422,12 @@ unsafe fn map_page_impl(offset: u64, virt: u64, phys: u64, user: bool) -> Result
         t
     };
 
-    // Leaf — U/S follows the caller's intent.
-    unsafe { table_write(pt, offset, index1(virt), entry_page(phys, true, true, user)) };
+    // Leaf — U/S follows the caller's intent; NX marks non-executable data.
+    let mut leaf = entry_page(phys, true, true, user);
+    if nx {
+        leaf |= NX;
+    }
+    unsafe { table_write(pt, offset, index1(virt), leaf) };
     unsafe { crate::ffi::invlpg(virt) };
     Ok(())
 }
@@ -494,6 +513,14 @@ mod tests {
         let e = entry_page(frame, true, true, false);
         assert_eq!(e & ADDR_MASK, frame);
         assert_eq!(flags_of(e), (PRESENT | WRITABLE) as u16);
+    }
+
+    #[test]
+    fn nx_bit_is_above_addr_mask() {
+        assert_eq!(NX, 1 << 63);
+        assert_eq!(NX & ADDR_MASK, 0); // NX never disturbs the frame bits
+        // A user data leaf has U/S but NX; a code leaf has U/S with no NX.
+        assert!(entry_page(0x1000, true, true, true) & NX == 0);
     }
 
     #[test]
