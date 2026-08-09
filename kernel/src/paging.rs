@@ -368,6 +368,13 @@ pub unsafe fn map_user_page(offset: u64, virt: u64, phys: u64) -> Result<(), Map
 /// with the requested U/S bit.
 #[cfg(target_os = "none")]
 unsafe fn map_page_impl(offset: u64, virt: u64, phys: u64, user: bool) -> Result<(), MapError> {
+    // IMPORTANT (x86 Intel SDM 23.6): a page is accessible to user mode only if
+    // the U/S bit is set in the LEAF **and in every upper-level page-table entry
+    // that maps it**. If the PDPT/PD/PT entries stay supervisor (U/S=0), a user
+    // fetch/write faults even when the leaf has U/S. So when mapping a user
+    // page we propagate USER onto the intermediate entries we create.
+    let ptr = |e: u64| -> u64 { e | if user { USER } else { 0 } };
+
     let pml4 = current_cr3() & ADDR_MASK;
 
     // Level 4 → PDPT.
@@ -376,7 +383,7 @@ unsafe fn map_page_impl(offset: u64, virt: u64, phys: u64, user: bool) -> Result
         e4 & ADDR_MASK
     } else {
         let t = alloc_table(offset)?;
-        unsafe { table_write(pml4, offset, index4(virt), entry_pointer(t, true, true)) };
+        unsafe { table_write(pml4, offset, index4(virt), ptr(entry_pointer(t, true, true))) };
         t
     };
 
@@ -386,7 +393,7 @@ unsafe fn map_page_impl(offset: u64, virt: u64, phys: u64, user: bool) -> Result
         e3 & ADDR_MASK
     } else {
         let t = alloc_table(offset)?;
-        unsafe { table_write(pdpt, offset, index3(virt), entry_pointer(t, true, true)) };
+        unsafe { table_write(pdpt, offset, index3(virt), ptr(entry_pointer(t, true, true))) };
         t
     };
 
@@ -396,7 +403,7 @@ unsafe fn map_page_impl(offset: u64, virt: u64, phys: u64, user: bool) -> Result
         e2 & ADDR_MASK
     } else {
         let t = alloc_table(offset)?;
-        unsafe { table_write(pd, offset, index2(virt), entry_pointer(t, true, true)) };
+        unsafe { table_write(pd, offset, index2(virt), ptr(entry_pointer(t, true, true))) };
         t
     };
 

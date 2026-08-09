@@ -157,5 +157,55 @@ lion_xchg8:
     ret
 .size lion_xchg8,.-lion_xchg8
 
+# ---------------------------------------------------------------------------
+# Month 4 (userland): ring-3 descent + the syscall/sysret fast path.
+# ---------------------------------------------------------------------------
+
+# void lion_usermode_go(uint64_t rip, uint64_t rsp, uint64_t user_cs,
+#                       uint64_t user_ss, uint64_t rflags)
+#   Build a ring-3 iretq frame on the current (kernel) stack and descend.
+#   iretq pops {RIP, CS, RFLAGS, RSP, SS}; we push in reverse so SS is deepest.
+#   The CPU performs a privilege change because the target CS/SS carry RPL3.
+.global lion_usermode_go
+.type lion_usermode_go,@function
+lion_usermode_go:
+    movq  %r8, %rax          # rflags
+    pushq %rcx               # SS
+    pushq %rsi               # RSP
+    pushq %rax               # RFLAGS
+    pushq %rdx               # CS
+    pushq %rdi               # RIP
+    iretq
+.size lion_usermode_go,.-lion_usermode_go
+
+# The LSTAR (MSR 0xC000_0082) target: entered from ring 3 via `syscall`.
+#   Hardware on entry: rcx = user RIP, r11 = user RFLAGS, rsp = user RSP
+#   (syscall does NOT switch stacks), CS/SS already kernel, IF cleared by SFMASK.
+#   We switch to a kernel stack, dispatch (C ABI, 6 args), and sysretq back.
+.global lion_syscall_entry
+.type lion_syscall_entry,@function
+lion_syscall_entry:
+    movq  %rsp, %r13              # user rsp (r13 callee-saved; kept across call)
+    movq  SYSCALL_KSTACK(%rip), %rsp   # switch to the kernel syscall stack
+    pushq %rcx                    # user RIP (return address for sysretq)
+    pushq %r11                    # user RFLAGS
+    pushq %r13                    # user RSP
+    # dispatch(num, a0, a1, a2, a3, user_rsp) in SysV regs:
+    #   num=rax a0=rdi a1=rsi a2=rdx a3=r10 user_rsp=r13
+    movq  %r13, %r9               # user_rsp -> arg5
+    movq  %r10, %r8               # a3 -> arg4
+    movq  %rdx, %rcx              # a2 -> arg3 (rcx is free; user RIP already pushed)
+    movq  %rsi, %rdx              # a1 -> arg2
+    movq  %rdi, %rsi              # a0 -> arg1
+    movq  %rax, %rdi              # num -> arg0
+    callq syscall_dispatch
+    # rax = result
+    popq  %r13                    # user rsp
+    popq  %r11                    # user RFLAGS
+    popq  %rcx                    # user RIP
+    movq  %r13, %rsp
+    sysretq
+.size lion_syscall_entry,.-lion_syscall_entry
+
 # Mark the objects as having a non-executable stack (GNU_STACK PT_GNU_STACK).
 .section .note.GNU-stack,"",@progbits

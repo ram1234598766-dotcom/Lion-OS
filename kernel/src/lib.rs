@@ -38,3 +38,4 @@ pub mod sched;
 pub mod serial;
 pub mod spinlock;
 pub mod syscall;
+pub mod user;

@@ -285,6 +285,24 @@ pub fn load() {
 /// [null, code64, data64, TSS-lo, TSS-hi, user-code, user-data] = 7 slots.
 pub const GDT_TSS_ENTRIES: usize = 7;
 
+/// Virtual base of the TSS frame mapped by [`setup`] (kernel target). Set once
+/// at setup so later code can write TSS fields (e.g. RSP0 for ring-3 IRQs).
+#[cfg(target_os = "none")]
+static mut TSS_VBASE: u64 = 0;
+
+/// Point the TSS's `RSP0` at `rsp0` (the top of a kernel stack). On a
+/// ring-3 → ring-0 privilege transfer (a hardware IRQ while a user process is
+/// running) the CPU loads RSP from RSP0, so it must be a valid kernel stack.
+///
+/// # Safety
+/// Must run after [`setup`] (TSS_VBASE live) and before entering ring 3.
+#[cfg(target_os = "none")]
+pub unsafe fn set_rsp0(rsp0: u64) {
+    // TSS lives at TSS_VBASE + 0x1000; `rsp0` is the u64 at offset 8.
+    let base = unsafe { core::ptr::addr_of!(TSS_VBASE).read() };
+    unsafe { *((base + 0x1000 + 8) as *mut u64) = rsp0 };
+}
+
 /// Kernel-only: install a full GDT with a 64-bit TSS (IST0) for the
 /// double-fault handler, on pages we own (mapped writable via `paging`).
 ///
@@ -313,6 +331,7 @@ pub unsafe fn setup() {
     }
     // 3 frames: GDT, TSS, double-fault stack.
     // SAFETY: `base` is page-aligned, currently-unmapped; allocator has frames.
+    unsafe { core::ptr::addr_of_mut!(TSS_VBASE).write(base) }
     paging::map_range(offset, base, 3).expect("map GDT/TSS/stack frames");
 
     let gdt_v = base as *mut u8;

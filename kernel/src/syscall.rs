@@ -96,6 +96,76 @@ pub unsafe fn enable(lstar: u64) {
     crate::ffi::write_msr(MSR_STAR, star_value());
     crate::ffi::write_msr(MSR_LSTAR, lstar);
     crate::ffi::write_msr(MSR_SFMASK, sfmask_value());
+    // The `syscall` instruction itself is gated on EFER.SCE (bit 0) — without
+    // it, ring-3 `syscall` raises #UD. Turn it on.
+    let efer = crate::ffi::read_msr(0xC000_0080);
+    crate::ffi::write_msr(0xC000_0080, efer | 1);
+}
+
+//------------------------------------------------------------------------------
+// Kernel-entry machinery (the asm stub in asm/cpu.s calls into these).
+//------------------------------------------------------------------------------
+
+// The LSTAR entry stub — `lion_syscall_entry` in `kernel/asm/cpu.s`.
+#[cfg(target_os = "none")]
+extern "C" {
+    fn lion_syscall_entry();
+}
+
+/// A dedicated kernel stack for the syscall entry path (`syscall` does NOT
+/// switch stacks). The asm stub reads this value and `mov`s RSP to it. Zero
+/// initializer → lives in writable `.bss`, not the read-only `.data` mapping.
+#[cfg(target_os = "none")]
+#[no_mangle]
+pub static mut SYSCALL_KSTACK: u64 = 0;
+
+/// Virtual address of the syscall entry stub, for `LSTAR`.
+#[cfg(target_os = "none")]
+pub fn syscall_entry_addr() -> u64 {
+    lion_syscall_entry as *const () as usize as u64
+}
+
+/// Count of syscalls serviced this boot (single ring-3 program, so a `static`).
+#[cfg(target_os = "none")]
+static mut SYSCALLS: u64 = 0;
+
+/// The syscall dispatcher, called by the asm stub with the C calling convention:
+/// `(num, a0, a1, a2, a3, user_rsp)`. Runs in ring 0 on the syscall kernel
+/// stack. Emits deterministic `LIONOS_*` markers so CI can prove the ring-3 →
+/// ring-0 → ring-3 round trip.
+#[cfg(target_os = "none")]
+#[no_mangle]
+pub extern "C" fn syscall_dispatch(
+    num: u64,
+    a0: u64,
+    _a1: u64,
+    _a2: u64,
+    _a3: u64,
+    user_rsp: u64,
+) -> i64 {
+    unsafe { SYSCALLS += 1 };
+    match num {
+        // The user program passes its own CS in `a0` — proving it really is at
+        // ring 3 (CS selector has RPL3). Admit the value deterministically.
+        SYS_GETC => {
+            crate::serial::write_str("LIONOS_USER_CS=");
+            crate::serial::write_hex(a0);
+            crate::serial::write_str(" rstk=");
+            crate::serial::write_hex(user_rsp);
+            crate::serial::write_str("\r\n");
+            0
+        }
+        SYS_PUTC | SYS_SLEEP | SYS_LEDGET => 0,
+        SYS_EXIT => {
+            // All syscalls this round-trip have been serviced; prove the full
+            // user→kernel→user traversal occurred (each is a `syscall`+`sysretq`).
+            crate::serial::write_str("LIONOS_USER_CALLS=");
+            crate::serial::write_dec(unsafe { SYSCALLS });
+            crate::serial::write_str("\r\n");
+            0
+        }
+        _ => ERRNO_ENOSYS as i64,
+    }
 }
 
 // ------------------------------- tests --------------------------------------

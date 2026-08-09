@@ -127,7 +127,14 @@ jobs:
           grep -q "LIONOS_SCHED tasks=" "$RUNNER_TEMP/boot-positive.log"      # cooperative + PIT scheduler woke
           grep -q "LIONOS_CPP magic=" "$RUNNER_TEMP/boot-positive.log"        # C++17 object linked + ran
           grep -q "LIONOS_ZIG magic=" "$RUNNER_TEMP/boot-positive.log"        # Zig object linked + ran
-          echo "PASS: handoff + fb + fmt + LIONOS_INIT_OK + C/asm + M2 IRQ + M2 heap + M2 frames + paging takeover + GDT/TSS + NASM/C-str + M3 driver layer + M3 ATA/FS + M3 Task-4 driver set observed on serial"
+          # Month 4: ring-3 + syscall round trip. USER_CS=0x2b proves the user
+          # process really executed at ring 3 (CS = USER_CODE(0x28)|RPL3) and
+          # crossed user->kernel->user; USER_CALLS counts every serviced syscall.
+          grep -q "LIONOS_SYSCALL_MSR star=" "$RUNNER_TEMP/boot-positive.log" # syscall MSRs programmed (STAR/LSTAR/SFMASK + EFER.SCE)
+          grep -q "LIONOS_USER_DROP" "$RUNNER_TEMP/boot-positive.log"         # iretq descent to ring 3 happened
+          grep -q "LIONOS_USER_CS=000000000000002b" "$RUNNER_TEMP/boot-positive.log" # user executed at CPL3 and syscalls round-tripped
+          grep -q "LIONOS_USER_CALLS=4" "$RUNNER_TEMP/boot-positive.log"     # all 4 user syscalls serviced (getc/putc/sleep/exit)
+          echo "PASS: handoff + fb + fmt + LIONOS_INIT_OK + C/asm + M2 IRQ + M2 heap + M2 frames + paging takeover + GDT/TSS + NASM/C-str + M3 layer + M3 ATA/FS + M3 Task-4 set + M4 ring3/syscall round trip observed on serial"
 
       - name: Boot smoke test (read-only FAT32 over ATA PIO second drive)
         working-directory: os

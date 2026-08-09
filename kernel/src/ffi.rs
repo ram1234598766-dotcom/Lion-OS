@@ -42,6 +42,8 @@ extern "C" {
     fn lion_read_msr(msr: u32) -> u64;
     fn lion_write_msr(msr: u32, value: u64);
     fn lion_read_rflags() -> u64;
+    // Month 4: ring-3 descent (iretq to a {RIP,CS,RFLAGS,RSP,SS} frame).
+    fn lion_usermode_go(rip: u64, rsp: u64, cs: u64, ss: u64, rflags: u64);
     fn lion_inb(port: u16) -> u8;
     fn lion_outb(port: u16, value: u8);
     fn lion_xchg8(ptr: *mut u8, value: u8) -> u8;
@@ -226,6 +228,18 @@ pub unsafe fn write_msr(msr: u32, value: u64) {
 pub fn read_rflags() -> u64 {
     // SAFETY: pushfq/popfq is always safe.
     unsafe { lion_read_rflags() }
+}
+
+/// Descend from ring 0 to ring 3: build a iretq frame with the given user
+/// `rip`/`rsp` and RPL-3 `cs`/`ss`, and switch to user mode. Does not return
+/// (control passes to the ring-3 `rip`).
+///
+/// # Safety
+/// `rip`/`rsp` must point into user-accessible (U/S) mapped pages; `cs`/`ss`
+/// must be the ring-3 user selectors (usually `USER_CODE | 3`). Called once
+/// with interrupts disabled.
+pub unsafe fn usermode_go(rip: u64, rsp: u64, cs: u64, ss: u64, rflags: u64) {
+    unsafe { lion_usermode_go(rip, rsp, cs, ss, rflags) }
 }
 
 /// Read one byte from an I/O port (asm `inb`).

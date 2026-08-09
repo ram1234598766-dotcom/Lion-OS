@@ -556,8 +556,18 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
     serial::write_dec(unsafe { ROTATIONS });
     serial::write_str("\r\n");
 
-    // Park the boot context as the scheduler's idle loop (switches on timer ticks).
-    sched::idle_loop();
+    // --- Month 4: ring-3 + syscall bring-up (the last boot action) ---
+    // Descend to ring 3 and round-trip a few `syscall`s. `bring_up` returns
+    // false only when it could NOT descend (CPU lacks `syscall`, or no free low
+    // region); on success it iretq's to ring 3 and never returns. If it could
+    // not descend we carry on with the ring-0 idle loop.
+    if !(unsafe { lionos_kernel::user::bring_up() }) {
+        sched::idle_loop();
+    }
+
+    // After `bring_up` descended we can never reach this point; if it returned
+    // false the idle loop above is already spinning.
+    unreachable!()
 }
 
 // Bootloader config: enable the physical-memory mapping so `BootInfo`
