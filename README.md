@@ -1184,7 +1184,8 @@ kernel integration.
 
 **Target:** Month 6
 
-- [ ] Path A: dock, theming, file explorer, editor, AI stub
+- [~] Path A (in progress): **AI stub done** (`ai.rs`, honest no-ML canned
+      replies, `LIONOS_AI_STUB`); **dock, theming, file explorer, editor** open
 - [ ] (or) Path B: deepen fuzzing, bare-metal attempt, CI matrix, docs
 
 ### Long Term Goals
@@ -1199,6 +1200,14 @@ kernel integration.
 ---
 
 ## Changelog
+
+### [Unreleased] — Month 6 (v1.0.0, Path A in progress)
+
+#### Added
+
+- **Simulated AI assistant** (`kernel/src/ai.rs`) — honest, no-ML canned
+  reply engine (case-insensitive keyword match, allocation-free); exercised at
+  boot with `LIONOS_AI_STUB reply="LionOS AI ready"`.
 
 ### [v0.5.0] — Month 4 (userland) + Month 5 (graphics)
 
