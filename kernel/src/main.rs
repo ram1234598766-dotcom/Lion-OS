@@ -612,6 +612,29 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
     }
     serial::write_str("\"\r\n");
 
+    // --- Month 6: Path-A apps (theme, editor, explorer, dock) ---
+    let t = lionos_kernel::theme::Theme::dark();
+    serial::write_raw(b"LIONOS_THEME t=");
+    serial::write_str(t.name);
+    serial::write_str("\r\n");
+
+    let mut ed = lionos_kernel::editor::TextBuffer::new();
+    ed.put(b"LionOS");
+    ed.backspace(ed.len()); // drop the trailing 's'
+    serial::write_raw(b"LIONOS_EDITOR len=");
+    serial::write_dec(ed.len() as u64);
+    serial::write_str("\r\n");
+
+    // Explorer reports the number of files on the last FAT mount; when no disk
+    // is mounted this is 0 (the FS driver already logs LIONOS_FS_NONE_MOUNTED).
+    serial::write_raw(b"LIONOS_EXPLORER files=");
+    serial::write_dec(lionos_kernel::drivers::last_fs_files() as u64);
+    serial::write_str("\r\n");
+
+    serial::write_raw(b"LIONOS_DOCK napps=");
+    serial::write_dec(lionos_kernel::dock::app_count() as u64);
+    serial::write_str("\r\n");
+
     // --- Month 4: ring-3 + syscall bring-up (the last boot action) ---
     // Descend to ring 3 and round-trip a few `syscall`s. `bring_up` returns
     // false only when it could NOT descend (CPU lacks `syscall`, or no free low

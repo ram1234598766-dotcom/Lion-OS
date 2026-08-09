@@ -143,7 +143,12 @@ jobs:
           grep -q "LIONOS_GFX_COMPOSITE nwins=" "$RUNNER_TEMP/boot-positive.log" # painter z-order composite
           grep -q "LIONOS_GFX_FOCUS win=" "$RUNNER_TEMP/boot-positive.log"    # input routing / focus
           # Month 6: simulated AI assistant stub (honest, no ML).
-          grep -q "LIONOS_AI_STUB reply=\"" "$RUNNER_TEMP/boot-positive.log"  # canned assistant answered
+          grep -q "LIONOS_AI_STUB reply=\"" "$RUNNER_TEMP/boot-positive.log"  # simulated AI answered
+          # Month 6: Path-A apps live (theme / editor / explorer / dock).
+          grep -q "LIONOS_THEME t=" "$RUNNER_TEMP/boot-positive.log"        # theme applied
+          grep -q "LIONOS_EDITOR len=" "$RUNNER_TEMP/boot-positive.log"     # text editor edited a buffer
+          grep -q "LIONOS_EXPLORER files=" "$RUNNER_TEMP/boot-positive.log" # file explorer reported a count
+          grep -q "LIONOS_DOCK napps=" "$RUNNER_TEMP/boot-positive.log"     # dock app bar
           echo "PASS: handoff + fb + fmt + LIONOS_INIT_OK + C/asm + M2 IRQ + M2 heap + M2 frames + paging takeover + GDT/TSS + NASM/C-str + M3 layer + M3 ATA/FS + M3 Task-4 set + M4 ring3/syscall round trip observed on serial"
 
       - name: Boot smoke test (read-only FAT32 over ATA PIO second drive)

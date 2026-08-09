@@ -48,11 +48,22 @@ use crate::fs;
 use crate::fs::BlockDevice;
 use crate::serial;
 
+/// Number of files in the last successful FAT root `ls` (0 if none mounted).
+/// Set by `init_all`; read by the Month-6 file explorer at boot.
+#[cfg(target_os = "none")]
+static LAST_FS_FILES: core::sync::atomic::AtomicUsize = core::sync::atomic::AtomicUsize::new(0);
+
+/// Count of files listed from the most-recent FAT mount (0 when no disk).
+#[cfg(target_os = "none")]
+pub fn last_fs_files() -> usize {
+    LAST_FS_FILES.load(core::sync::atomic::Ordering::Relaxed)
+}
+
 /// Run every driver's init and print a consolidated marker line. Boot-time,
-/// single CPU, after interrupts + heap are up. Kernel-only: the device drivers
-/// touch hardware that the host test target doesn't link (their *pure* pieces —
-/// keyboard decode, RTC BCD, PCI present-check, mouse packet decode, face-id —
-/// are still host-tested separately).
+/// single CPU, after interrupts + heap are up. Kernel-only: the device
+/// drivers touch hardware that the host test target doesn't link (their
+/// *pure* pieces — keyboard decode, RTC BCD, PCI present-check, mouse packet
+/// decode, face-id — are still host-tested separately).
 #[cfg(target_os = "none")]
 pub fn init_all() {
     // Real-time clock: print current date/time (CMOS). No driver state needed.
@@ -178,6 +189,7 @@ pub fn init_all() {
                     serial::write_str("\r\n");
                     let mut entries = alloc::vec::Vec::new();
                     if f.ls(disk, &mut entries) {
+                        LAST_FS_FILES.store(entries.len(), core::sync::atomic::Ordering::Relaxed);
                         serial::write_str("LIONOS_FS_LS count=");
                         serial::write_dec(entries.len() as u64);
                         serial::write_str(" [");

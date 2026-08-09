@@ -24,7 +24,10 @@ extern crate alloc;
 extern crate std;
 
 pub mod ai;
+pub mod dock;
 pub mod drivers;
+pub mod editor;
+pub mod explorer;
 pub mod ffi;
 pub mod frames;
 pub mod fs;
@@ -41,4 +44,5 @@ pub mod sched;
 pub mod serial;
 pub mod spinlock;
 pub mod syscall;
+pub mod theme;
 pub mod user;
