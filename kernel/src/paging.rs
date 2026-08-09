@@ -348,6 +348,26 @@ fn alloc_table(offset: u64) -> Result<u64, MapError> {
 /// already mapped; the allocator must have spare frames.
 #[cfg(target_os = "none")]
 pub unsafe fn map_page(offset: u64, virt: u64, phys: u64) -> Result<(), MapError> {
+    unsafe { map_page_impl(offset, virt, phys, false) }
+}
+
+/// Map a single 4 KiB frame at `virt` with the **user (U/S)** bit set, so
+/// ring-3 code can access/execute it. Intermediate table entries stay
+/// supervisor-only; only the leaf carries U/S. Used for the user code + stack
+/// pages of a ring-3 process.
+///
+/// # Safety
+/// Same contract as [`map_page`] (`offset` valid, `virt` page-aligned and
+/// unmapped, allocator has frames).
+#[cfg(target_os = "none")]
+pub unsafe fn map_user_page(offset: u64, virt: u64, phys: u64) -> Result<(), MapError> {
+    unsafe { map_page_impl(offset, virt, phys, true) }
+}
+
+/// Shared implementation: walk/populate the 4-level tables and write the leaf
+/// with the requested U/S bit.
+#[cfg(target_os = "none")]
+unsafe fn map_page_impl(offset: u64, virt: u64, phys: u64, user: bool) -> Result<(), MapError> {
     let pml4 = current_cr3() & ADDR_MASK;
 
     // Level 4 → PDPT.
@@ -380,8 +400,8 @@ pub unsafe fn map_page(offset: u64, virt: u64, phys: u64) -> Result<(), MapError
         t
     };
 
-    // Leaf.
-    unsafe { table_write(pt, offset, index1(virt), entry_page(phys, true, true, false)) };
+    // Leaf — U/S follows the caller's intent.
+    unsafe { table_write(pt, offset, index1(virt), entry_page(phys, true, true, user)) };
     unsafe { crate::ffi::invlpg(virt) };
     Ok(())
 }
@@ -467,6 +487,17 @@ mod tests {
         let e = entry_page(frame, true, true, false);
         assert_eq!(e & ADDR_MASK, frame);
         assert_eq!(flags_of(e), (PRESENT | WRITABLE) as u16);
+    }
+
+    #[test]
+    fn entry_page_user_sets_user_bit() {
+        let frame: u64 = 0x0000_08B0_2000;
+        // User leaf: U bit (bit 2) must be set; supervisor leaf must not.
+        let user = entry_page(frame, true, true, true);
+        assert!(user & USER != 0);
+        let sup = entry_page(frame, true, true, false);
+        assert_eq!(sup & USER, 0);
+        assert_eq!(flags_of(user), (PRESENT | WRITABLE | USER) as u16);
     }
 
     #[test]

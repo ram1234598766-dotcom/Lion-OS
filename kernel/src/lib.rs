@@ -37,3 +37,4 @@ pub mod paging;
 pub mod sched;
 pub mod serial;
 pub mod spinlock;
+pub mod syscall;

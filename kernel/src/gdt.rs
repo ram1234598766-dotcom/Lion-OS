@@ -78,6 +78,31 @@ impl SegmentDescriptor {
             base_high: 0,
         }
     }
+
+    /// Ring-3 code descriptor: flat base/limit, present, DPL3, 64-bit.
+    /// access = 0xFA (present | DPL3 | code/read); granularity = 0xA0 (L=1).
+    pub const fn new_user_code() -> Self {
+        SegmentDescriptor {
+            limit_low: 0,
+            base_low: 0,
+            base_mid: 0,
+            access: 0xFA,
+            granularity: 0xA0,
+            base_high: 0,
+        }
+    }
+
+    /// Ring-3 data descriptor: present, DPL3, writable. access = 0xF2.
+    pub const fn new_user_data() -> Self {
+        SegmentDescriptor {
+            limit_low: 0,
+            base_low: 0,
+            base_mid: 0,
+            access: 0xF2,
+            granularity: 0x00,
+            base_high: 0,
+        }
+    }
 }
 
 /// GDT selector values (index * 8).
@@ -86,6 +111,11 @@ pub const KERNEL_DATA: u16 = 0x10;
 
 /// Selector for the 64-bit TSS (GDT index 3).
 pub const KERNEL_TSS: u16 = 0x18;
+
+/// Ring-3 (user) code selector (GDT index 5).
+pub const USER_CODE: u16 = 0x28;
+/// Ring-3 (user) data selector (GDT index 6).
+pub const USER_DATA: u16 = 0x30;
 
 /// Number of entries in the base kernel GDT (null + code + data).
 pub const GDT_ENTRIES: usize = 3;
@@ -251,9 +281,9 @@ pub fn load() {
     }
 }
 
-/// Number of GDT slots with the TSS system descriptor appended (null, code64,
-/// data64, then the 2-slot 64-bit TSS descriptor).
-pub const GDT_TSS_ENTRIES: usize = 5;
+/// Number of GDT slots after `setup()` with the TSS + ring-3 descriptors:
+/// [null, code64, data64, TSS-lo, TSS-hi, user-code, user-data] = 7 slots.
+pub const GDT_TSS_ENTRIES: usize = 7;
 
 /// Kernel-only: install a full GDT with a 64-bit TSS (IST0) for the
 /// double-fault handler, on pages we own (mapped writable via `paging`).
@@ -305,6 +335,19 @@ pub unsafe fn setup() {
         (&tss_desc as *const TssDescriptor) as *const u8,
         gdt_v.add(3 * 8),
         core::mem::size_of::<TssDescriptor>(),
+    );
+    // Ring-3 segments at slots 5 and 6 (user code, user data).
+    let user_code = SegmentDescriptor::new_user_code();
+    let user_data = SegmentDescriptor::new_user_data();
+    core::ptr::copy_nonoverlapping(
+        (&user_code as *const SegmentDescriptor) as *const u8,
+        gdt_v.add(5 * 8),
+        8,
+    );
+    core::ptr::copy_nonoverlapping(
+        (&user_data as *const SegmentDescriptor) as *const u8,
+        gdt_v.add(6 * 8),
+        8,
     );
 
     // 3. Load GDT, reload data segments, then load the TSS (ltr).
@@ -379,5 +422,39 @@ mod tests {
         let gdtr = gdtr_of(&g);
         assert_eq!(gdtr.limit(), (8 * GDT_ENTRIES - 1) as u16);
         assert_eq!(gdtr.base(), g.as_ptr() as u64);
+    }
+
+    #[test]
+    fn user_selectors_are_standard() {
+        assert_eq!(USER_CODE, 0x28);
+        assert_eq!(USER_DATA, 0x30);
+    }
+
+    #[test]
+    fn user_code_descriptor_flags() {
+        let d = SegmentDescriptor::new_user_code();
+        assert_eq!(d.access, 0xFA); // present | DPL3 | code/read
+        assert_eq!(d.granularity, 0xA0); // L bit -> 64-bit
+    }
+
+    #[test]
+    fn user_data_descriptor_flags() {
+        let d = SegmentDescriptor::new_user_data();
+        assert_eq!(d.access, 0xF2); // present | DPL3 | data/rw
+    }
+
+    #[test]
+    fn user_descriptors_are_dpl3() {
+        // DPL lives in access bits 6..5; DPL3 = 0x30.
+        assert_eq!(SegmentDescriptor::new_user_code().access & 0x60, 0x60);
+        assert_eq!(SegmentDescriptor::new_user_data().access & 0x60, 0x60);
+    }
+
+    #[test]
+    fn full_gdt_has_seven_slots() {
+        assert_eq!(GDT_TSS_ENTRIES, 7);
+        // kernel selectors stay unchanged (ring 0).
+        assert_eq!(KERNEL_CODE, 0x08);
+        assert_eq!(KERNEL_DATA, 0x10);
     }
 }
