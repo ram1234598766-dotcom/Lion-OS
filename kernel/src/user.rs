@@ -39,6 +39,10 @@ const USER_PROGRAM: &[u8] = &[
     0x48, 0xc7, 0xc0, 0x05, 0x00, 0x00, 0x00, // mov rax, SYS_SLEEP
     0x48, 0xc7, 0xc7, 0x04, 0x00, 0x00, 0x00, // mov rdi, 4
     0x0f, 0x05, // syscall
+    0x48, 0xc7, 0xc0, 0x06, 0x00, 0x00, 0x00, // mov rax, SYS_RECV (shell reads mailbox)
+    0x0f, 0x05, // syscall
+    0x48, 0xc7, 0xc0, 0x07, 0x00, 0x00, 0x00, // mov rax, SYS_SEND (shell writes ack)
+    0x0f, 0x05, // syscall
     0x48, 0xc7, 0xc0, 0x00, 0x00, 0x00, 0x00, // mov rax, SYS_EXIT
     0x0f, 0x05, // syscall
     0xeb, 0xfe, // jmp $
@@ -104,6 +108,10 @@ pub unsafe fn bring_up() -> bool {
     crate::serial::write_str(" lstar=");
     crate::serial::write_hex(entry);
     crate::serial::write_str("\r\n");
+
+    // 4b. Seed the IPC mailbox so the ring-3 shell has a message to `recv`
+    //     (stands in for input arriving from another party).
+    syscall::seed_mailbox(b"LiOS");
 
     // 5. Descend to ring 3 (iretq to a frame with RPL3 CS/SS, IF off).
     let user_cs = (gdt::USER_CODE as u64) | 3;

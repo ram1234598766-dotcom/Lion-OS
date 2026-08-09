@@ -31,6 +31,7 @@ pub mod framebuffer;
 pub mod gdt;
 pub mod heap;
 pub mod idt;
+pub mod ipc;
 pub mod interrupts;
 pub mod memory;
 pub mod paging;

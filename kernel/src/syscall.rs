@@ -27,6 +27,10 @@ pub const SYS_GETC: u64 = 3;
 pub const SYS_LEDGET: u64 = 4;
 /// `sleep(ms)` — park until the PIT advances.
 pub const SYS_SLEEP: u64 = 5;
+/// `recv()` — read (drain) the kernel IPC mailbox (ring-3 shell).
+pub const SYS_RECV: u64 = 6;
+/// `send()` — write the kernel IPC mailbox (ring-3 shell).
+pub const SYS_SEND: u64 = 7;
 
 /// System-call error values (negative, stable).
 pub const ERRNO_ENOSYS: i64 = -38; // unknown syscall number
@@ -43,6 +47,8 @@ pub fn lookup(n: u64) -> Option<&'static str> {
         SYS_GETC => Some("getc"),
         SYS_LEDGET => Some("ledget"),
         SYS_SLEEP => Some("sleep"),
+        SYS_RECV => Some("recv"),
+        SYS_SEND => Some("send"),
         _ => None,
     }
 }
@@ -129,6 +135,20 @@ pub fn syscall_entry_addr() -> u64 {
 #[cfg(target_os = "none")]
 static mut SYSCALLS: u64 = 0;
 
+/// The IPC mailbox (see `ipc.rs`), read/written by the ring-3 shell through
+/// `SYS_RECV`/`SYS_SEND`. Zero-size initializer → `.bss`, writable.
+#[cfg(target_os = "none")]
+static mut MAILBOX: crate::ipc::Mailbox = crate::ipc::Mailbox::new();
+
+/// Seed the IPC mailbox with a message before the ring-3 shell starts (a
+/// stand-in for "input arriving from another party"). The shell then
+/// `recv`s it.
+#[cfg(target_os = "none")]
+pub fn seed_mailbox(line: &[u8]) {
+    let held = unsafe { &mut *core::ptr::addr_of_mut!(MAILBOX) };
+    held.send(line);
+}
+
 /// The syscall dispatcher, called by the asm stub with the C calling convention:
 /// `(num, a0, a1, a2, a3, user_rsp)`. Runs in ring 0 on the syscall kernel
 /// stack. Emits deterministic `LIONOS_*` markers so CI can prove the ring-3 →
@@ -155,7 +175,32 @@ pub extern "C" fn syscall_dispatch(
             crate::serial::write_str("\r\n");
             0
         }
-        SYS_PUTC | SYS_SLEEP | SYS_LEDGET => 0,
+        SYS_RECV => {
+                // Ring-3 shell "reads" the IPC mailbox: drain it and report the
+                // carried bytes (proves the message passed through the kernel).
+                let held = unsafe { &mut *core::ptr::addr_of_mut!(MAILBOX) };
+                let mut tmp = [0u8; 8];
+                let n = held.drain(&mut tmp);
+                // Fold the first up-to-8 bytes into a sentinel for the marker.
+                let head = tmp.iter().fold(0u64, |acc, &b| (acc << 8) | u64::from(b));
+                crate::serial::write_str("LIONOS_SHELL_READ n=");
+                crate::serial::write_dec(n as u64);
+                crate::serial::write_str(" head=");
+                crate::serial::write_hex(head);
+                crate::serial::write_str("\r\n");
+                0
+            }
+            SYS_SEND => {
+                // The shell "writes" an acknowledgement into the mailbox.
+                let ok = b"ok!";
+                let held = unsafe { &mut *core::ptr::addr_of_mut!(MAILBOX) };
+                let n = held.send(ok);
+                crate::serial::write_str("LIONOS_SHELL_WROTE n=");
+                crate::serial::write_dec(n as u64);
+                crate::serial::write_str("\r\n");
+                0
+            }
+            SYS_PUTC | SYS_SLEEP | SYS_LEDGET => 0,
         SYS_EXIT => {
             // All syscalls this round-trip have been serviced; prove the full
             // user→kernel→user traversal occurred (each is a `syscall`+`sysretq`).
@@ -195,11 +240,12 @@ mod tests {
 
     #[test]
     fn lookup_round_trips_all_numbers() {
-        for n in 0..6 {
+        for n in 0..8 {
             assert!(lookup(n).is_some(), "number {n} must be defined");
         }
-        assert!(lookup(6).is_none());
+        assert!(lookup(8).is_none());
         assert_eq!(name_of(SYS_EXIT), "exit");
+        assert_eq!(name_of(SYS_RECV), "recv");
         assert_eq!(name_of(0xFFFF), "unknown");
     }
 

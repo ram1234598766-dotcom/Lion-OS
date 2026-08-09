@@ -133,7 +133,9 @@ jobs:
           grep -q "LIONOS_SYSCALL_MSR star=" "$RUNNER_TEMP/boot-positive.log" # syscall MSRs programmed (STAR/LSTAR/SFMASK + EFER.SCE)
           grep -q "LIONOS_USER_DROP" "$RUNNER_TEMP/boot-positive.log"         # iretq descent to ring 3 happened
           grep -q "LIONOS_USER_CS=000000000000002b" "$RUNNER_TEMP/boot-positive.log" # user executed at CPL3 and syscalls round-tripped
-          grep -q "LIONOS_USER_CALLS=4" "$RUNNER_TEMP/boot-positive.log"     # all 4 user syscalls serviced (getc/putc/sleep/exit)
+          grep -q "LIONOS_USER_CALLS=6" "$RUNNER_TEMP/boot-positive.log"     # 6 user syscalls serviced (getc/putc/sleep/recv/send/exit)
+          grep -q "LIONOS_SHELL_READ n=" "$RUNNER_TEMP/boot-positive.log"   # ring-3 shell drained the IPC mailbox
+          grep -q "LIONOS_SHELL_WROTE n=" "$RUNNER_TEMP/boot-positive.log"  # ring-3 shell wrote the IPC ack
           echo "PASS: handoff + fb + fmt + LIONOS_INIT_OK + C/asm + M2 IRQ + M2 heap + M2 frames + paging takeover + GDT/TSS + NASM/C-str + M3 layer + M3 ATA/FS + M3 Task-4 set + M4 ring3/syscall round trip observed on serial"
 
       - name: Boot smoke test (read-only FAT32 over ATA PIO second drive)
