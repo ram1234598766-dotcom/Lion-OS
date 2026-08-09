@@ -217,11 +217,11 @@ unit-tested, and fuzzed.
   - [x] C framebuffer drawing layer (`kernel/c/fb.c`) — `LIONOS_FB_DRAW_OK`
   - [x] `core::fmt` (`writeln!`) via `Serial` — `LIONOS_FMT_OK`
 
-### Planned
+### Shipped after v0.1.0
 
-- [ ] Month 4: syscalls, ring separation, ELF loader, minimal shell
-- [ ] Month 5: graphics, compositor, wallpaper
-- [ ] Month 6: Path A (shell + AI stub) or Path B (hardening)
+- [x] Month 4: syscalls, ring separation, ELF loader, user + IPC shell
+- [x] Month 5: graphics, compositor, wallpaper
+- [x] Month 6: Path A apps (dock/theme/editor/explorer/AI stub)
 - [ ] Bare-metal boot / installer (post-6-month stretch)
 
 ### Feature Matrix
@@ -1213,8 +1213,13 @@ kernel integration.
   `USER_CALLS=6`). `user/linker.ld` links at a relative base; the loader offsets
   by a runtime free region so the user tables are U/S at every level.
 - **NX on user data pages** — `paging::map_user_data` sets the NX leaf bit on
-  the ring-3 stack; boot marker `LIONOS_SEC_CAPS nx=1`. SMEP/SMAP deferred (the
-  CR4 write stalls the bring-up; see `docs/SECURITY.md`).
+  the ring-3 stack; boot marker `LIONOS_SEC_CAPS nx=1`.
+- **SYS_PUTS (user→kernel copy)** — the user program puts `"Hello!"` on its
+  ring-3 stack and the kernel bounds-checks `copy_from_user` against the loaded
+  user VA range (`LIONOS_SYS_PUTS ok=1 str="Hello!"`).
+- **SMEP (CPUID-gated)** — enabled when the CPU supports it (`.. smep=0|1`),
+  fixing the earlier CR4 `#GP` stall on QEMU's default CPU; SMAP stays deferred
+  until `copy_from_user` gets `stac`/`clac` (see `docs/SECURITY.md`).
 
 ### [v1.0.0] — Month 6 (Path A, shipped)
 
@@ -1258,9 +1263,9 @@ kernel integration.
   `checksec`/`readelf` audit of the kernel ELF (NX on, partial RELRO, no
   canary/PIE, 605 debug symbols).
 
-#### Pending (this month)
-- ELF loader (the first user program is a hand-encoded stub today).
-- Hardening follow-ups recorded in `docs/SECURITY.md`.
+#### Pending
+- SMAP (needs `stac`/`clac` around `copy_from_user`) + a kernel canary —
+  hardening only, tracked in `docs/SECURITY.md`.
 
 ### [v0.3.1] — Month 3 follow-ups
 

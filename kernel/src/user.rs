@@ -112,11 +112,21 @@ pub unsafe fn bring_up() -> bool {
     crate::serial::write_hex(entry);
     crate::serial::write_str("\r\n");
 
-    // 4a. Security hardening (writes the SECURITY.md deferral): the user stack
-    //     was mapped No-Execute (`map_user_data`), so report it. (SMEP/SMAP are
-    //     intentionally NOT enabled yet — a CR4.SMEP/SMAP write stalls this
-    //     bring-up before first syscall; leave them for a dedicated follow-up.)
-    crate::serial::write_raw(b"LIONOS_SEC_CAPS nx=1\r\n");
+    // 4a. Security hardening: the user stack is mapped No-Execute (always), and
+    //     SMEP is enabled when the CPU supports it. (SMAP is left 0 — enabling
+    //     it would make the ring-0 SYS_PUTS copy_from_user fault until the copy
+    //     is wrapped in stac/clac; that's the documented follow-up.) Writing a
+    //     CR4 bit the CPU does not implement #GPs — QEMU's default CPU lacks
+    //     SMEP/SMAP, which was the earlier boot stall — so gate on the flag.
+    let feat = crate::ffi::cpuid(7, 0);
+    let smep = ((feat[1] >> 7) & 1) == 1; // CPUID.7.0:EBX bit 7
+    let cr4 = crate::ffi::read_cr4();
+    if smep && cr4 & (1 << 20) == 0 {
+        crate::ffi::write_cr4(cr4 | (1 << 20));
+    }
+    crate::serial::write_str("LIONOS_SEC_CAPS nx=1 smep=");
+    crate::serial::write_dec(smep as u64);
+    crate::serial::write_str(" smap=0\r\n");
 
     // 4b. Seed the IPC mailbox so the ring-3 shell has a message to `recv`
     //     (stands in for input arriving from another party).

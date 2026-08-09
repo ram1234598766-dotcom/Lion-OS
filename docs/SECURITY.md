@@ -37,12 +37,12 @@
 
 ## 4. NOT yet enforced (explicit)
 
-- **No SMEP/SMAP yet.** CR4 bits 20/21 are not set — a CR4.SMEP/SMAP write was
-  attempted during the ring-3 bring-up and **stalled the boot before the first
-  syscall** (unclear silent-hang cause), so it is deliberately deferred to a
-  dedicated hardening pass. NX-on-user-*data* pages IS now enforced
-  (`map_user_data` sets the NX leaf bit; boot marker `LIONOS_SEC_CAPS nx=1`).
-  Kernel code pages remain executable by design.
+- **SMEP is enabled when the CPU supports it** (boot `LIONOS_SEC_CAPS nx=1
+  smep=0|1`); writing CR4 bits the CPU lacks #GPs (QEMU's default CPU has no
+  SMEP — that was the earlier silent stall), so it is gated on CPUID.7.0:EBX.
+- **SMAP is still deferred.** Enabling it must come with `stac`/`clac` around
+  the ring-0 `copy_from_user` (SYS_PUTS), or ring-0 reads of user pages fault.
+  NX-on-user-*data* pages IS enforced (`map_user_data`).
 - **No upper/lower half separation.** User allocations share the same
   global page tables as the kernel (the kernel just leaves the U/S off).
 - **No pids / no per-process page-table switch.** The scheduler is
@@ -74,12 +74,10 @@ kernel runs them). A single `GNU_STACK RW` means no executable stack.
 
 **Honest gaps → TODOs (no hardening commit yet):**
 - **NX on user *data* pages — DONE** (`map_user_data`, boot `LIONOS_SEC_CAPS
-  nx=1`). The user *code* page stays W+X (it must run); the user *stack* is
-  NX. **SMEP/SMAP still open** (the CR4 write stalled the bring-up — see §4).
-- **No SMEP/SMAP** (`CR4.SMEP/SMAP` bits not set) — ring 3 cannot execute the
-  kernel today only because it does not share pages and the `syscall` handler
-  runs supervisor-only, not because SMEP is on. Add them when the user/kernel
-  memory split matures.
+  nx=1`). The user *code* page stays W+X; the user *stack* is NX.
+- **SMEP — DONE when supported** (CPUID-gated, boot `.. smep=0|1`); on a CPU
+  without SMEP (QEMU default) it stays 0 and boots fine.
+- **SMAP — open** (needs `stac`/`clac` around the SYS_PUTS `copy_from_user`).
 - **Partial RELRO / no canary / no PIE** — a freestanding kernel relocates to a
   fixed low address by design; these are inherent rather than regressions, but a
   canary on the ring-0 syscall path would raise the cost of a userland exploit
