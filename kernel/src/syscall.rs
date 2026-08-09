@@ -149,6 +149,41 @@ pub fn seed_mailbox(line: &[u8]) {
     held.send(line);
 }
 
+/// The loaded user program's VA range (set by `user::bring_up` after loading),
+/// so `copy_from_user` is bounds-checked against it.
+#[cfg(target_os = "none")]
+static mut USER_VA_START: u64 = 0;
+#[cfg(target_os = "none")]
+static mut USER_VA_END: u64 = 0;
+
+/// Record the loaded user program's [start, end) VA range for `copy_from_user`.
+#[cfg(target_os = "none")]
+pub fn set_user_range(start: u64, end: u64) {
+    unsafe {
+        USER_VA_START = start;
+        USER_VA_END = end;
+    }
+}
+
+/// Bounds-checked copy of `n` bytes from the user VA `src` into `dst`. Returns
+/// `false` if `[src, src+n)` falls outside the loaded user program's range (the
+/// classic `copy_from_user` check). Only the ring-3 caller can reach this.
+#[cfg(target_os = "none")]
+fn user_copy_in(dst: &mut [u8], src: u64, n: usize) -> bool {
+    let (s, e) = unsafe { (USER_VA_START, USER_VA_END) };
+    if s == 0 || src < s {
+        return false;
+    }
+    let want_end = src.saturating_add(n as u64);
+    if want_end > e {
+        return false;
+    }
+    // SAFETY: `src..+n` is within the user pages we mapped; ring-0 reads of user
+    // memory are allowed here (SMAP not enabled).
+    unsafe { core::ptr::copy_nonoverlapping(src as *const u8, dst.as_mut_ptr(), n) };
+    true
+}
+
 /// The syscall dispatcher, called by the asm stub with the C calling convention:
 /// `(num, a0, a1, a2, a3, user_rsp)`. Runs in ring 0 on the syscall kernel
 /// stack. Emits deterministic `LIONOS_*` markers so CI can prove the ring-3 →
@@ -158,15 +193,31 @@ pub fn seed_mailbox(line: &[u8]) {
 pub extern "C" fn syscall_dispatch(
     num: u64,
     a0: u64,
-    _a1: u64,
+    a1: u64,
     _a2: u64,
     _a3: u64,
     user_rsp: u64,
 ) -> i64 {
     unsafe { SYSCALLS += 1 };
     match num {
-        // The user program passes its own CS in `a0` — proving it really is at
-        // ring 3 (CS selector has RPL3). Admit the value deterministically.
+        SYS_PUTS => {
+            // User→kernel data passing (closes copy_from_user): copy `a1` bytes
+            // from the user buffer at `a0`, bounds-checked to the loaded user
+            // program's VA range (the ELF the loader built). Emits them on serial.
+            let n = a1.min(64) as usize;
+            let mut buf = [0u8; 64];
+            let ok = user_copy_in(&mut buf[..n], a0, n);
+            crate::serial::write_str("LIONOS_SYS_PUTS ok=");
+            crate::serial::write_dec(ok as u64);
+            crate::serial::write_str(" str=\"");
+            for &b in &buf[..n] {
+                crate::serial::write_byte(b);
+            }
+            crate::serial::write_str("\"\r\n");
+            0
+        }
+        // The user-constructed program passes its own CS in `a0` — proving it
+        // really is at ring 3 (CS selector has RPL3).
         SYS_GETC => {
             crate::serial::write_str("LIONOS_USER_CS=");
             crate::serial::write_hex(a0);

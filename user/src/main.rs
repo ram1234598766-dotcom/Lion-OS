@@ -32,7 +32,18 @@ pub extern "C" fn _start() -> ! {
         asm!("mov {0}, cs", out(reg) cs, options(nomem, nostack));
 
         sc(3, cs);           // SYS_GETC(cs)  -> LIONOS_USER_CS
-        sc(1, 65);           // SYS_PUTC('A')
+        // SYS_PUTS: place "Hello!" on the ring-3 stack and pass its address+len,
+        // proving user→kernel data copy (bounds-checked copy_from_user).
+        asm!(
+            "sub rsp, 8",
+            "mov rax, 0x216f6c6c6548", // "Hello!" little-endian
+            "mov [rsp], rax",
+            "mov rdi, rsp",
+            "mov rsi, 6",
+            "mov rax, 2", // SYS_PUTS
+            "syscall",
+            "add rsp, 8",
+        );
         sc(5, 4);            // SYS_SLEEP(4)
         sc_n(6);             // SYS_RECV      -> LIONOS_SHELL_READ
         sc_n(7);             // SYS_SEND      -> LIONOS_SHELL_WROTE

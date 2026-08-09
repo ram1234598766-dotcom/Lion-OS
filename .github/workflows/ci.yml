@@ -136,6 +136,8 @@ jobs:
           grep -q "LIONOS_USER_CALLS=6" "$RUNNER_TEMP/boot-positive.log"     # 6 user syscalls serviced (getc/putc/sleep/recv/send/exit)
           grep -q "LIONOS_SHELL_READ n=" "$RUNNER_TEMP/boot-positive.log"   # ring-3 shell drained the IPC mailbox
           grep -q "LIONOS_SHELL_WROTE n=" "$RUNNER_TEMP/boot-positive.log"  # ring-3 shell wrote the IPC ack
+          # user→kernel data copy (bounds-checked copy_from_user) via SYS_PUTS.
+          grep -q "LIONOS_SYS_PUTS ok=1 str=\"Hello!\"" "$RUNNER_TEMP/boot-positive.log"
           # Month 5: graphics foundation (safe Canvas + double-buffer present).
           grep -q "LIONOS_GFX_CANVAS ok" "$RUNNER_TEMP/boot-positive.log"    # bounds-checked Canvas drew
           grep -q "LIONOS_GFX_DBLBUF present=" "$RUNNER_TEMP/boot-positive.log" # back buffer presented into front

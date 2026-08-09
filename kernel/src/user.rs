@@ -87,6 +87,9 @@ pub unsafe fn bring_up() -> bool {
     let stack_f = crate::frames::allocate_frame().expect("user stack frame") * 4096;
     crate::paging::map_user_data(offset, user_stack_page, stack_f).expect("map user stack");
     let user_stack_top = user_stack_page + 0x1000;
+    // Record the user program's VA range so the syscall handler bounds-checks
+    // `copy_from_user` (SYS_PUTS) against it.
+    syscall::set_user_range(base, user_stack_top);
 
     // 3. A dedicated kernel stack for the syscall entry path (and ring-3 IRQs).
     let kstack = alloc::boxed::Box::<[u8; 8192]>::leak(alloc::boxed::Box::new([0u8; 8192]));
