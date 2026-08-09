@@ -238,8 +238,34 @@ CI can assert it initialized.
   follows the cluster chain. Verified against a real mtools image on a second
   ATA drive (`LIONOS_FS_OK` / `LIONOS_FS_LS` / `LIONOS_FS_READ`, byte-identical).
 
-## 4. Userland & Syscalls — *Month 4 (pending)*
+## 4. Userland & Syscalls — *Month 4*
 
-## 4. Userland & Syscalls — *Month 4 (pending)*
+**Primitive: the ring transition.** The M2 kernel owns its page tables
+(`paging::takeover`) and installed a writable GDT+TSS/IST (`gdt::setup`) and a
+frame-backed heap. Month 4 extends that into a userland path:
+
+- **Ring-3 segments** (`gdt.rs`) — `USER_CODE` (0x28) + `USER_DATA` (0x30),
+  present with DPL3, appended to the writable GDT. The kernel still runs on
+  `KERNEL_CODE` (0x08)/`KERNEL_DATA` (0x10).
+- **Syscall MSRs** (`syscall.rs`) — `STAR`, `LSTAR`, `SFMASK` for the
+  `syscall`/`sysret` fast path; gated on CPUID.0x80000001:EDX [11]. The entry
+  stub stashes the ring-3 RSP and RIP (`syscall` clobbers RCX/R11), switches
+  to a kernel stack, dispatches a syscall number, and returns via `sysretq`.
+  ABI + numeration: `docs/SYSCALLS.md`.
+- **User maps** (`paging.rs::map_user_page`) — a present+writable+USER mapping
+  so ring 3 can execute its own code/stack, while kernel pages stay supervisor
+  (no U/S) and #PF on ring-3 access.
+- **Trampoline** — the one and only 0→3 descent is `iretq` with a ring-3
+  frame; TSS.RSP0 is set to a kernel-allocated stack so ring-3 IRQs (PIT etc.)
+  have a kernel stack to switch to.
+
+**Permission model (v0.4 scope):** user code can only reach the world through
+the syscall list in `docs/SYSCALLS.md`. Ports/MSRs are not directly usable at
+CPL3, and device pages are mapped supervisor-only. Anything not yet enforced
+(upper/lower memory split, pid isolation) is truthfully marked in
+`SECURITY.md`.
+
+**Earliest board** it is exercised on: a ring-3 stub that `syscalls` once and
+returns (see the plan `docs/superpowers/plans/2026-08-09-month4-userland.md`).
 
 ## 5. Graphics & Window Management — *Month 5 (pending)*
