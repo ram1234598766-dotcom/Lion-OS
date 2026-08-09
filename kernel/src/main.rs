@@ -505,6 +505,36 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
     serial::write_hex(u64::from(*boxed));
     serial::write_str("\r\n");
 
+    // --- Month 5: safe Canvas + double-buffer demo (after heap init so the
+    // BackBuffer can allocate) ---
+    if let Some(fb) = boot_info.framebuffer.as_mut() {
+        let info = fb.info();
+        let fw = info.width as usize;
+        let fh = info.height as usize;
+        let fpitch = (info.stride as usize).saturating_mul(info.bytes_per_pixel as usize);
+        let fbpp = info.bytes_per_pixel as usize;
+        let f_total = fpitch.saturating_mul(fh);
+        // SAFETY: pitch/height came from the validation path earlier; the
+        // mapped framebuffer is at least pitch*height bytes.
+        let fb_slice =
+            unsafe { core::slice::from_raw_parts_mut(fb.buffer_mut().as_mut_ptr(), f_total) };
+        if let Some(mut front) = lionos_kernel::gfx::Canvas::new(fb_slice, fw, fh, fpitch, fbpp) {
+            front.fill_rect(40, 40, 32, 32, 0x0000ff);
+            serial::write_raw(b"LIONOS_GFX_CANVAS ok\r\n");
+            if let Some(mut back) = lionos_kernel::gfx::BackBuffer::new(48, 48, 3) {
+                back.canvas.fill_rect(0, 0, 48, 48, 0x00ff80);
+                let copied = front.blit_from(&back.canvas, 48, 48, 0, 0);
+                serial::write_raw(b"LIONOS_GFX_DBLBUF present=");
+                serial::write_dec(copied as u64);
+                serial::write_str("\r\n");
+            } else {
+                serial::write_raw(b"LIONOS_GFX_DBLBUF_ERR\r\n");
+            }
+        } else {
+            serial::write_raw(b"LIONOS_GFX_CANVAS_ERR\r\n");
+        }
+    }
+
     // --- Month 2: page-table ownership marker ---
     // The bootloader 0.11 does NOT identity-map its own page tables (reading
     // CR3's physical address faults), so the kernel cannot read/write them to

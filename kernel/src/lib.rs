@@ -29,6 +29,7 @@ pub mod frames;
 pub mod fs;
 pub mod framebuffer;
 pub mod gdt;
+pub mod gfx;
 pub mod heap;
 pub mod idt;
 pub mod ipc;

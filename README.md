@@ -1171,7 +1171,9 @@ kernel integration.
 
 **Target:** Month 5
 
-- [ ] Double buffering, mouse, input routing
+- [x] Double-buffer foundation — safe `gfx::Canvas` + `BackBuffer`/`present`
+      (`LIONOS_GFX_CANVAS ok`, `LIONOS_GFX_DBLBUF present=`); **mouse + input
+      routing still open**
 - [ ] Compositor (z-order, clipping, move/resize)
 - [ ] Wallpaper (static then animated)
 
@@ -1211,6 +1213,11 @@ kernel integration.
 - **IPC mailbox + shell** — a bounded kernel `Mailbox` (`ipc.rs`) behind
   `SYS_RECV`/`SYS_SEND`; the ring-3 shell `recv`s a seeded message and `send`s
   an ack (`LIONOS_SHELL_READ`/`LIONOS_SHELL_WROTE`).
+- **Month-5 graphics foundation** — a safe, bounds-checked `gfx::Canvas`
+  (host-tested `set_pixel`/`fill_rect`/`clear`/`blit`) + a `BackBuffer` that
+  `present`s onto the front (`LIONOS_GFX_CANVAS ok`,
+  `LIONOS_GFX_DBLBUF present=6912`). (docs
+  `superpowers/plans/2026-08-09-month5-graphics.md`.)
 - **`SECURITY.md`** — threat + permission model, and the first
   `checksec`/`readelf` audit of the kernel ELF (NX on, partial RELRO, no
   canary/PIE, 605 debug symbols).
