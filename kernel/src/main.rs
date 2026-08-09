@@ -521,8 +521,27 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
         if let Some(mut front) = lionos_kernel::gfx::Canvas::new(fb_slice, fw, fh, fpitch, fbpp) {
             front.fill_rect(40, 40, 32, 32, 0x0000ff);
             serial::write_raw(b"LIONOS_GFX_CANVAS ok\r\n");
-            if let Some(mut back) = lionos_kernel::gfx::BackBuffer::new(48, 48, 3) {
-                back.canvas.fill_rect(0, 0, 48, 48, 0x00ff80);
+            // Double-buffer present + compositor/wallpaper/input-routing demo.
+            if let Some(mut back) = lionos_kernel::gfx::BackBuffer::new(96, 64, 3) {
+                // (a) animated-gradient wallpaper on the back buffer, tick=0.
+                use lionos_kernel::gfx::{Window, focus, gradient_fill, paint_scene};
+                gradient_fill(&mut back.canvas, 0);
+                serial::write_raw(b"LIONOS_GFX_WALL ok\r\n");
+                // (b) a two-window compositor scene (painter's algorithm).
+                let wins = [
+                    Window { x: 4, y: 4, w: 40, h: 56, color: 0x00ff80 }, // bottom
+                    Window { x: 20, y: 16, w: 26, h: 26, color: 0x0044ff }, // top
+                ];
+                paint_scene(&mut back.canvas, &wins);
+                serial::write_raw(b"LIONOS_GFX_COMPOSITE nwins=");
+                serial::write_dec(wins.len() as u64);
+                serial::write_str("\r\n");
+                // (c) input routing: focus the top-most window under the cursor.
+                let focused = focus(&wins, 24, 24);
+                serial::write_raw(b"LIONOS_GFX_FOCUS win=");
+                serial::write_dec(focused.unwrap_or(0) as u64);
+                serial::write_str("\r\n");
+                // (d) present the composite to the front.
                 let copied = front.blit_from(&back.canvas, 48, 48, 0, 0);
                 serial::write_raw(b"LIONOS_GFX_DBLBUF present=");
                 serial::write_dec(copied as u64);

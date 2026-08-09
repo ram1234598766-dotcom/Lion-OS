@@ -1171,11 +1171,15 @@ kernel integration.
 
 **Target:** Month 5
 
-- [x] Double-buffer foundation — safe `gfx::Canvas` + `BackBuffer`/`present`
-      (`LIONOS_GFX_CANVAS ok`, `LIONOS_GFX_DBLBUF present=`); **mouse + input
-      routing still open**
-- [ ] Compositor (z-order, clipping, move/resize)
-- [ ] Wallpaper (static then animated)
+- [x] Double buffering — safe `gfx::Canvas` + `BackBuffer`/`present`
+      (`LIONOS_GFX_CANVAS ok`, `LIONOS_GFX_DBLBUF present=`)
+- [x] Compositor — `Window` + `paint_scene` (painter's algorithm z-order with
+      clipping; windows are moved/resized by editing their fields);
+      `LIONOS_GFX_COMPOSITE nwins=…`
+- [x] Input routing — `gfx::focus(windows, x, y)` returns the top-most window
+      (the existing PS/2 mouse driver feeds the cursor); `LIONOS_GFX_FOCUS win=…`
+- [x] Wallpaper — `gfx::gradient_fill(canvas, tick)` vertical gradient, animated
+      by advancing `tick`; `LIONOS_GFX_WALL ok`
 
 ### Version 1.0 — Month 6
 
@@ -1218,6 +1222,10 @@ kernel integration.
   `present`s onto the front (`LIONOS_GFX_CANVAS ok`,
   `LIONOS_GFX_DBLBUF present=6912`). (docs
   `superpowers/plans/2026-08-09-month5-graphics.md`.)
+- **Month-5 compositor + input + wallpaper** — `gfx::Window` + `paint_scene`
+  (painter z-order with clipping), `gfx::focus` (top-most window at a cursor,
+  routing), and an animated `gfx::gradient_fill(canvas, tick)` wallpaper
+  (`LIONOS_GFX_COMPOSITE nwins=2`, `LIONOS_GFX_FOCUS win=1`, `LIONOS_GFX_WALL ok`).
 - **`SECURITY.md`** — threat + permission model, and the first
   `checksec`/`readelf` audit of the kernel ELF (NX on, partial RELRO, no
   canary/PIE, 605 debug symbols).

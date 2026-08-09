@@ -137,6 +137,61 @@ impl BackBuffer {
     }
 }
 
+// ------------------------- compositor primitives ----------------------------
+
+/// A rectangular, axis-aligned window to be composited. Plain data — a `Canvas`
+/// paints an ordered list, later entries are on top (painter's algorithm), and
+/// a window is moved/resized by editing these fields.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Window {
+    pub x: usize,
+    pub y: usize,
+    pub w: usize,
+    pub h: usize,
+    pub color: u32,
+}
+
+impl Window {
+    /// True if pixel `(px, py)` is inside this window.
+    pub fn covers(&self, px: usize, py: usize) -> bool {
+        px >= self.x && px < self.x + self.w && py >= self.y && py < self.y + self.h
+    }
+}
+
+/// Composite `windows` onto `canvas` in list order (index 0 = bottom, the last
+/// entry = top). A rectangle drawn later overwrites any overlap from earlier
+/// ones — the classic painter's algorithm for axis-aligned rectangles. Each
+/// fill_rect clips to the canvas, so fully-offscreen windows draw nothing.
+pub fn paint_scene(canvas: &mut Canvas, windows: &[Window]) {
+    for w in windows {
+        canvas.fill_rect(w.x, w.y, w.w, w.h, w.color);
+    }
+}
+
+/// Return the index of the **topmost** window containing `(mx, my)` — i.e. the
+/// focused window at a pointer/cursor position. Scans top (last) → bottom.
+pub fn focus(windows: &[Window], mx: usize, my: usize) -> Option<usize> {
+    (0..windows.len()).rev().find(|&i| windows[i].covers(mx, my))
+}
+
+/// Fill `canvas` with a simple vertical gradient (deterministic per `(x,y)`).
+/// `tick` shifts the bands for an animated wallpaper. px `> w` scroll, index.
+pub fn gradient_fill(canvas: &mut Canvas, tick: u32) {
+    let h = canvas.height();
+    let w = canvas.width();
+    for y in 0..h {
+        // A per-row phase that advances with `tick` (→ animated).
+        let phase = (y as u32 + tick) & 0xFF;
+        for x in 0..w {
+            let _ = x;
+            let r = 0x10u32.wrapping_add(phase & 0x3F);
+            let g = 0x20u32.wrapping_add((phase >> 1) & 0x3F);
+            let b = 0x30u32.wrapping_add((phase >> 2) & 0x3F);
+            canvas.set_pixel(x, y, (r << 16) | (g << 8) | b);
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -206,10 +261,51 @@ mod tests {
         front.blit_from(&back, 8, 8, 0, 0);
         assert_eq!(front.read_pixel(0, 0), back.read_pixel(0, 0));
         assert_eq!(front.read_pixel(7, 7), back.read_pixel(7, 7));
-        // Off-screen dest clips to nothing (front stays clear).
         let mut front2 = canvas(4, 4, 3);
         front2.blit_from(&back, 8, 8, 4, 4);
         assert_eq!(front2.read_pixel(0, 0), Some(0u32));
         assert_eq!(front2.read_pixel(3, 3), Some(0u32));
+    }
+
+    #[test]
+    fn painter_z_order_overlap() {
+        let mut c = canvas(10, 10, 3);
+        // bottom: red (0,0,8,8); top: blue (2,2,4,4).
+        paint_scene(&mut c, &[
+            Window { x: 0, y: 0, w: 8, h: 8, color: 0xFF0000 },
+            Window { x: 2, y: 2, w: 4, h: 4, color: 0x0000FF },
+        ]);
+        assert_eq!(c.read_pixel(1, 1), Some(0xFF0000)); // only bottom
+        assert_eq!(c.read_pixel(3, 3), Some(0x0000FF)); // overlap -> top
+        assert_eq!(c.read_pixel(9, 9), Some(0)); // outside both -> clear
+    }
+
+    #[test]
+    fn painter_clips_offscreen_window() {
+        let mut c = canvas(6, 6, 3);
+        paint_scene(&mut c, &[Window { x: 5, y: 0, w: 10, h: 10, color: 0x00FF00 }]);
+        assert_eq!(c.read_pixel(5, 0), Some(0x00FF00)); // only column 5 in bounds
+        assert_eq!(c.read_pixel(4, 0), Some(0));
+    }
+
+    #[test]
+    fn focus_returns_topmost() {
+        let wins = [
+            Window { x: 0, y: 0, w: 6, h: 6, color: 0x010101 },
+            Window { x: 2, y: 2, w: 6, h: 6, color: 0x020202 },
+        ];
+        assert_eq!(focus(&wins, 1, 1), Some(0)); // only first
+        assert_eq!(focus(&wins, 3, 3), Some(1)); // topmost
+        assert_eq!(focus(&wins, 20, 20), None);
+    }
+
+    #[test]
+    fn gradient_advances_and_varies_by_row() {
+        let mut a = canvas(16, 8, 4);
+        let mut b = canvas(16, 8, 4);
+        gradient_fill(&mut a, 0);
+        gradient_fill(&mut b, 8);
+        assert_ne!(a.read_pixel(0, 0), b.read_pixel(0, 0)); // tick animates
+        assert_ne!(a.read_pixel(0, 0), a.read_pixel(0, 1)); // vertical gradient
     }
 }
