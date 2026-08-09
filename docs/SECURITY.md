@@ -47,19 +47,44 @@
   future `exec` must give each process its own PML4 (+ flip CR3 on switch),
   then `SECURITY.md` grows the multi-process isolation row.
 
-## 5. Audit (run at Month 4 Task 4)
+## 5. Audit (Month 4 Task 4 — run against the debug kernel ELF)
 
 ```
-# kernel still a static non-PIE ELF; NX/RELRO are ELF-level and apply to the
-# load image. Record output here, then update the CHANGELOG/README Security
-# section with the real numbers.
 checksec --file=target/x86_64-unknown-none/debug/lionos-kernel
 readelf -lW  target/x86_64-unknown-none/debug/lionos-kernel
-objdump -d  target/x86_64-unknown-none/debug/lionos-kernel | head -40
 ```
-Record here once run:
-- `checksec`: NX: ____, RELRO: ____, Canary: ____, PIE: ____, GNU_STACK: ____
-- `readelf` LOAD segments: ____
+
+**Recorded (2026-08-09, debug build):**
+
+| checksec | value |
+|----------|-------|
+| NX       | **enabled** (GNU_STACK is RW, non-exec) |
+| RELRO    | **Partial** (GNU_RELRO over 0x188 bytes) |
+| Stack canary | **none** (freestanding kernel, no libc/prologue canary) |
+| PIE      | **No** (static `EXEC`, `-no-pie` by design) |
+| RPATH/RUNPATH | none |
+| Symbols  | 605 (debug build, not stripped) |
+
+`readelf -lW` (4 LOAD segments): text `R E`, rodata `R`, data/bss `RW`. NX is
+real for the stack/CLS; code pages are executable because they must be (the
+kernel runs them). A single `GNU_STACK RW` means no executable stack.
+
+**Honest gaps → TODOs (no hardening commit yet):**
+- **No NX on user writable pages** — the ring-3 user code page is writable AND
+  executable (no `NXE` on its PTE). Enable the NX bit on user *data* pages in a
+  later hardening pass (Month 5 graphics needs it to stop marking rust-data).
+- **No SMEP/SMAP** (`CR4.SMEP/SMAP` bits not set) — ring 3 cannot execute the
+  kernel today only because it does not share pages and the `syscall` handler
+  runs supervisor-only, not because SMEP is on. Add them when the user/kernel
+  memory split matures.
+- **Partial RELRO / no canary / no PIE** — a freestanding kernel relocates to a
+  fixed low address by design; these are inherent rather than regressions, but a
+  canary on the ring-0 syscall path would raise the cost of a userland exploit
+  escalation. Open hardening file.
+- **Kernel ELF not stripped in debug** (615 symbols) — debug-only.
+
+Run a release (`--release`) build of the same audit for the shipped image; the
+relro/canary/PIE story is unchanged, symbols drop.
 
 ## 6. Reporting
 

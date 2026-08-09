@@ -1155,10 +1155,14 @@ kernel integration.
 
 **Target:** Month 4
 
-- [ ] `syscall`/`sysret` + entry/exit path
-- [ ] Ring 3 + ELF loader + first user-mode run
+- [x] `syscall`/`sysret` + entry/exit path — `STAR`/`LSTAR`/`SFMASK` + `EFER.SCE`,
+      `LIONOS_SYSCALL_MSR`, `LIONOS_USER_CS=…2b` (ring-3 → kernel → ring-3)
+- [x] Ring 3 + first user-mode run — `iretq` descent + a hand-encoded stub that
+      round-trips 4 syscalls (`LIONOS_USER_DROP` / `LIONOS_USER_CALLS=4`);
+      **ELF loader is the open follow-up**
 - [ ] IPC + minimal shell
-- [ ] `SECURITY.md` + `checksec`/`ropper` audits
+- [x] `SECURITY.md` + `checksec` audit (see `docs/SECURITY.md`; hardening
+      follow-ups tracked there)
 
 ### Version 0.5 — Graphics
 
@@ -1187,6 +1191,28 @@ kernel integration.
 ---
 
 ## Changelog
+
+### [Unreleased] — Month 4 (userland, in progress)
+
+#### Added
+
+- **Ring-3 + syscall bring-up** — the kernel descends to ring 3 (`iretq` to a
+  `USER_CODE|3`/`USER_DATA|3` frame) and the user process round-trips through
+  the `syscall`/`sysret` fast path (`STAR`/`LSTAR`/`SFMASK` + `EFER.SCE`).
+  Boot markers: `LIONOS_SYSCALL_MSR`, `LIONOS_USER_DROP`,
+  `LIONOS_USER_CS=000000000000002b` (proves CPL3), `LIONOS_USER_CALLS=4`.
+- **User maps** — `paging::map_user_page` (U/S on the leaf *and* the upper
+  page-table levels, per the Intel user-page rule) + ring-3 segments in the GDT
+  (`USER_CODE` 0x28 / `USER_DATA` 0x30) + a TSS `RSP0` kernel stack for
+  future ring-3 IRQs.
+- **`SECURITY.md`** — threat + permission model, and the first
+  `checksec`/`readelf` audit of the kernel ELF (NX on, partial RELRO, no
+  canary/PIE, 615 debug symbols).
+
+#### Pending (this month)
+- ELF loader (the first user program is a hand-encoded stub today).
+- IPC + a minimal shell.
+- Hardening follow-ups recorded in `docs/SECURITY.md`.
 
 ### [v0.3.1] — Month 3 follow-ups
 
