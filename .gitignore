@@ -6,3 +6,7 @@ Cargo.lock
 # libFuzzer artifacts (regenerated on each run)
 fuzz/corpus/
 fuzz/artifacts/
+
+# installer build staging
+installer/stage/
+installer/LionOS-Desktop-Setup-*.exe
