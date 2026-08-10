@@ -4,6 +4,7 @@
 //! toolchain), `update` (checksum-verified disk download).
 
 mod doctor;
+mod install;
 mod qemu;
 mod update;
 
@@ -34,6 +35,17 @@ enum Command {
     },
     /// Check the host environment and print install help if QEMU is missing.
     Doctor,
+    /// Install LionOS: provision QEMU + build deps + the Rust toolchain, then
+    /// build the bootable disk image. QEMU is a hard requirement — install
+    /// aborts if it cannot be installed.
+    Install {
+        /// Skip the kernel build (provision deps only).
+        #[arg(long)]
+        skip_build: bool,
+        /// Run the install as a detached background job, then return.
+        #[arg(long)]
+        detach: bool,
+    },
     /// Download a LionOS disk image and verify its SHA-256 checksum before use.
     Update {
         /// Source: a local directory path or an http(s):// base URL containing
@@ -50,6 +62,9 @@ fn main() -> ExitCode {
             .map(|_| ())
             .map_err(|e| e.to_string()),
         Command::Doctor => doctor::run().map_err(|e| e.to_string()),
+        Command::Install { skip_build, detach } => {
+            install::run(skip_build, detach).map_err(|e| e.to_string())
+        }
         Command::Update { source } => update::run(&source).map_err(|e| e.to_string()),
     };
     match result {

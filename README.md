@@ -221,7 +221,9 @@ unit-tested, and fuzzed.
 - [x] v0.5: syscalls, ring separation, ELF loader, user + IPC shell
 - [x] v0.5: graphics, compositor, wallpaper
 - [x] v1.0: Path A apps (dock/theme/editor/explorer/AI stub)
-- [ ] Bare-metal boot / installer (a post-release stretch)
+- [x] Install manager (`lionos install`, Rust) — provisions QEMU (hard dep) + build
+  deps + toolchain and builds the desktop image, backgroundable (`--detach`)
+- [ ] Bare-metal boot (a post-release stretch)
 
 ### Feature Matrix
 
@@ -424,6 +426,13 @@ brew install qemu
 
 ### Windows
 
+**Easiest:** double-click `installer/Install-LionOS.cmd`, or run `lionos install`
+— it installs QEMU (hard requirement) + the build deps/toolchain and builds the
+desktop image, then boot it with `lionos run` (see
+[Installation](#installation)).
+
+Manual (equivalent of what the installer does):
+
 ```bash
 winget install QEMU
 # + the same rustup steps as Linux
@@ -487,6 +496,26 @@ docker run --rm ghcr.io/ram1234598766-dotcom/lion-os/lion:v1.0.0
 
 You normally get LionOS in one of two ways: the `lionos` launcher CLI, or the
 container image.
+
+### Method 0 — Install manager (`lionos install`)
+
+`lionos install` automatically provisions everything LionOS needs to boot —
+**including QEMU, which is a hard requirement (the install aborts if it cannot
+be installed)** — then builds the desktop image. It is written in Rust and lives
+with the launcher. Everything is streamed to the console and to
+`%USERPROFILE%\.lionos\install.log`; `--detach` runs the whole job in the
+**background** and returns immediately.
+
+On Windows, double-click `installer/Install-LionOS.cmd` (it self-elevates and
+invokes `lionos install --detach`). Equivalently, from a terminal:
+
+```powershell
+lionos install            # provision QEMU + deps + toolchain, then build
+lionos install --detach   # same, but as a detached background job
+lionos install --skip-build  # provision deps/toolchain only
+```
+
+Then boot with `lionos run`.
 
 ### Method 1 — `lionos` launcher CLI
 
@@ -646,7 +675,10 @@ docker run --rm ghcr.io/ram1234598766-dotcom/lion-os/lion
 ### Running on Real Hardware
 
 Not yet supported. A bare-metal boot attempt is a planned v1.0 Path-B
-milestone; today the kernel runs only under QEMU. There is no installer.
+milestone; today the kernel runs only under QEMU. To *run* LionOS on a desktop,
+use the installation manager — `lionos install` (Rust) — which provisions QEMU
++ the build deps/toolchain and builds the image you boot with `lionos run` (see
+[Installation](#installation)).
 
 > ⚠️ **Warning:** Do not flash any LionOS artifact to physical media expecting
 > it to boot — that path is not built or tested.
