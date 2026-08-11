@@ -106,6 +106,9 @@ jobs:
       - name: List assets
         run: ls -laR assets
 
+      # Each package job uploaded a `dist/` directory (merge-multiple flattens
+      # their contents into `assets/dist/`), so the glob must look one level
+      # down from `assets/`.
       - name: Create release + attach installers
         uses: softprops/action-gh-release@v2
         with:
@@ -113,7 +116,7 @@ jobs:
           tag_name: ${{ github.ref_name }}
           generate_release_notes: true
           files: |
-            assets/*.deb
-            assets/*.pkg
-            assets/*.tar.gz
-            assets/*.exe
+            assets/dist/*.deb
+            assets/dist/*.pkg
+            assets/dist/*.tar.gz
+            assets/dist/*.exe
