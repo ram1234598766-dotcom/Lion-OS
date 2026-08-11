@@ -54,8 +54,9 @@ Root: HKCU; Subkey: "Environment"; ValueName: "PATH"; \
   Check: NeedsAddPath('{app}') and WizardIsTaskSelected('addtopath')
 
 [Run]
-Filename: "{app}\{#MyAppExeName}"; Parameters: "doctor"; \
-  Description: "Check your environment is ready"; Flags: nowait postinstall skipifsilent
+Filename: "{app}\{#MyAppExeName}"; Parameters: "setup"; \
+  Description: "Open the LionOS installation manager (auto-configures + package picker)"; \
+  Flags: nowait postinstall skipifsilent
 
 [Code]
 // Only add to PATH if not already present (and the segment is not empty).

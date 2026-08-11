@@ -265,9 +265,12 @@ fn ensure_rust() -> Result<(), String> {
 /// A single host tool the install guarantees. `required` is always true for the
 /// Page-1 toolchain — every tool is compulsory. `lang` names the compiler it
 /// drives, surfaced in the setup UI ("which language this row pulls in").
+/// (`required` is asserted by the roster tests; provisioning treats every tool
+/// as required, so it is not read in the shipped binary.)
 pub struct Tool {
     pub name: &'static str,
     pub lang: &'static str,
+    #[cfg_attr(not(test), allow(dead_code))]
     pub required: bool,
 }
 

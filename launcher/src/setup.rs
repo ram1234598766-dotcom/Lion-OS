@@ -12,7 +12,11 @@
 //! we put the terminal in raw mode; on Windows / no-terminal we accept numbered
 //! input (`n` toggles) so the wizard never breaks on a non-VT host.
 
-use std::io::{Read, Write};
+use std::io::Write;
+
+#[cfg(unix)]
+use std::io::Read;
+#[cfg(unix)]
 use std::process::Command;
 
 use crate::install;
@@ -20,7 +24,10 @@ use crate::selection::{COMPONENTS, Selection};
 
 /// A decoded key press. `Up`/`Down` move; `Toggle` flips a recommended item;
 /// `Enter` proceeds; `Quit` aborts.
+/// (`Up`/`Down`/`Toggle` are only *constructed* by the Unix raw-mode reader, so
+/// an allowed dead-code tag keeps the non-unix build warning-free.)
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(not(unix), allow(dead_code))]
 pub enum Key {
     Up,
     Down,

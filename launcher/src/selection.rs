@@ -13,7 +13,9 @@ pub struct Component {
     // Consumed by the setup TUI (setup.rs) — kept here until that task lands.
     #[allow(dead_code)]
     pub label: &'static str,
-    /// Compulsory: enabled always, cannot be un-ticked.
+    /// Compulsory: enabled always, cannot be un-ticked. Read by the tests that
+    /// pin the roster; provisioning itself treats every tool as required.
+    #[cfg_attr(not(test), allow(dead_code))]
     pub required: bool,
     /// Pre-ticked but optional (the "recommended" set of the picker).
     pub recommended: bool,
@@ -91,6 +93,8 @@ impl Selection {
     /// Parse a `components.enabled = ["a", "b"]` TOML doc back into a
     /// `Selection`. Unknown keys are kept if they parse; the required set is
     /// always merged in (a config can't disable compulsory components).
+    /// (Round-trip is exercised by the host tests.)
+    #[cfg_attr(not(test), allow(dead_code))]
     pub fn from_toml(text: &str) -> Result<Self, String> {
         let mut enabled: Vec<&'static str> = Vec::new();
         // Find the enabled array. Minimal parser: locate the `[components]`
