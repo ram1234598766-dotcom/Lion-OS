@@ -144,6 +144,7 @@ jobs:
           grep -q "LIONOS_GFX_WALL ok" "$RUNNER_TEMP/boot-positive.log"    # gradient wallpaper
           grep -q "LIONOS_GFX_COMPOSITE nwins=" "$RUNNER_TEMP/boot-positive.log" # painter z-order composite
           grep -q "LIONOS_GFX_FOCUS win=" "$RUNNER_TEMP/boot-positive.log"    # input routing / focus
+          grep -q "LIONOS_GFX_ANIM tick=" "$RUNNER_TEMP/boot-positive.log" # animated wallpaper drift + dock pop-ease
           # Month 6: simulated AI assistant stub (honest, no ML).
           grep -q "LIONOS_AI_STUB reply=\"" "$RUNNER_TEMP/boot-positive.log"  # simulated AI answered
           # Month 6: Path-A apps live (theme / editor / explorer / dock).

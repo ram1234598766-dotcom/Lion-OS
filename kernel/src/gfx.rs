@@ -192,6 +192,44 @@ pub fn gradient_fill(canvas: &mut Canvas, tick: u32) {
     }
 }
 
+/// An animated diagonal drifting wallpaper. `tick` advances both the vertical
+/// and horizontal phase, so the color bands drift diagonally (rather than the
+/// single-axis scroll of `gradient_fill`). Deterministic per `(x, y, tick)`,
+/// fully bounded by the canvas (via `set_pixel`), and host-testable.
+pub fn wallpaper_drift(canvas: &mut Canvas, tick: u32) {
+    let h = canvas.height();
+    let w = canvas.width();
+    for y in 0..h {
+        for x in 0..w {
+            // Two-phase: add the column so the pattern shifts horizontally with
+            // `tick` too, producing a diagonal drift.
+            let phase = (y as u32 + x as u32 + tick) & 0xFF;
+            let r = 0x10u32.wrapping_add(phase & 0x3F);
+            let g = 0x20u32.wrapping_add((phase >> 1) & 0x3F);
+            let b = 0x30u32.wrapping_add((phase >> 2) & 0x3F);
+            canvas.set_pixel(x, y, (r << 16) | (g << 8) | b);
+        }
+    }
+}
+
+/// The classic "overshoot" ease (Kenny's ease-out-back, 1.70158 c1): starts at
+/// 0, rises past 1, and settles exactly on 1 at `t == 1.0`. Bounded to `[0, 1]`
+/// so callers can feed it a scale/duration safely. Pure and host-testable.
+pub fn ease_out_back(t: f32) -> f32 {
+    let t = t.clamp(0.0, 1.0);
+    let c1 = 1.70158;
+    let c3 = c1 + 1.0;
+    let x = t - 1.0;
+    1.0 + c3 * x * x * x + c1 * x * x
+}
+
+/// Map `t` in `[0, 1]` to a value that pops from `base - mag` up through
+/// `base` (with a slight overshoot) and settles at `base`. Used for a dock /
+/// window-focus pop: `dock_pop(t, base, mag)` = `base + mag * ease_out_back(t)`.
+pub fn dock_pop(t: f32, base: i32, mag: i32) -> i32 {
+    base + (mag as f32 * ease_out_back(t)) as i32
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -307,5 +345,56 @@ mod tests {
         gradient_fill(&mut b, 8);
         assert_ne!(a.read_pixel(0, 0), b.read_pixel(0, 0)); // tick animates
         assert_ne!(a.read_pixel(0, 0), a.read_pixel(0, 1)); // vertical gradient
+    }
+
+    #[test]
+    fn wallpaper_drift_animates_with_tick() {
+        let mut a = canvas(16, 8, 4);
+        let mut b = canvas(16, 8, 4);
+        wallpaper_drift(&mut a, 0);
+        wallpaper_drift(&mut b, 7);
+        assert_ne!(a.read_pixel(0, 0), b.read_pixel(0, 0)); // tick animates
+    }
+
+    #[test]
+    fn wallpaper_drift_varies_by_column_diagonal() {
+        // Horizontal phase means (0,0) differs from a same-row column (w-1,0).
+        let mut a = canvas(24, 8, 4);
+        wallpaper_drift(&mut a, 0);
+        assert_ne!(a.read_pixel(0, 0), a.read_pixel(23, 0));
+    }
+
+    #[test]
+    fn wallpaper_drift_stays_in_bounds() {
+        // Every written pixel is readable back — nothing was written OOB.
+        let mut a = canvas(20, 12, 4);
+        wallpaper_drift(&mut a, 5);
+        for y in 0..12 {
+            for x in 0..20 {
+                assert!(a.read_pixel(x, y).is_some());
+            }
+        }
+        assert_eq!(a.read_pixel(20, 0), None); // still clipped
+    }
+
+    #[test]
+    fn ease_out_back_is_bounded_and_anchored() {
+        assert_eq!(ease_out_back(0.0), 0.0);
+        assert_eq!(ease_out_back(1.0), 1.0);
+        // Overshoot stays within the sane [0, 1.2] band for the whole range.
+        let mut t = 0.0f32;
+        while t <= 1.0 {
+            let v = ease_out_back(t);
+            assert!((0.0..=1.2).contains(&v), "ease_out_back({t}) = {v} out of band");
+            t += 0.05;
+        }
+    }
+
+    #[test]
+    fn dock_pop_settles_at_base() {
+        assert_eq!(dock_pop(1.0, 10, 5), 15); // settled -> base + mag
+        assert_eq!(dock_pop(0.0, 10, 5), 10); // start -> base
+        // Overshoot region nudges above base before settling (peak value).
+        assert!(dock_pop(0.5, 10, 5) >= 10);
     }
 }

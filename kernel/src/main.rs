@@ -523,9 +523,11 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
             serial::write_raw(b"LIONOS_GFX_CANVAS ok\r\n");
             // Double-buffer present + compositor/wallpaper/input-routing demo.
             if let Some(mut back) = lionos_kernel::gfx::BackBuffer::new(96, 64, 3) {
-                // (a) animated-gradient wallpaper on the back buffer, tick=0.
-                use lionos_kernel::gfx::{Window, focus, gradient_fill, paint_scene};
-                gradient_fill(&mut back.canvas, 0);
+                // (a) animated diagonal-drift wallpaper on the back buffer, tick depends on
+                //    the CPU (deterministic for a fixed VM), exercising the new
+                //    drifting phase on top of the plain vertical gradient.
+                use lionos_kernel::gfx::{Window, dock_pop, focus, paint_scene, wallpaper_drift};
+                wallpaper_drift(&mut back.canvas, interrupts::ticks() as u32);
                 serial::write_raw(b"LIONOS_GFX_WALL ok\r\n");
                 // (b) a two-window compositor scene (painter's algorithm).
                 let wins = [
@@ -545,6 +547,15 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
                 let copied = front.blit_from(&back.canvas, 48, 48, 0, 0);
                 serial::write_raw(b"LIONOS_GFX_DBLBUF present=");
                 serial::write_dec(copied as u64);
+                serial::write_str("\r\n");
+                // (e) animation marker: the dock pop-ease and the wallpaper drift
+                //     both run off the same PIT tick (deterministic per VM).
+                serial::write_raw(b"LIONOS_GFX_ANIM tick=");
+                serial::write_dec(interrupts::ticks() as u64);
+                serial::write_raw(b" drift=");
+                serial::write_dec(dock_pop(interrupts::ticks() as f32 * 0.05, 0, 2) as u64);
+                serial::write_raw(b" pop=");
+                serial::write_dec((interrupts::ticks() % 3) as u64);
                 serial::write_str("\r\n");
             } else {
                 serial::write_raw(b"LIONOS_GFX_DBLBUF_ERR\r\n");
