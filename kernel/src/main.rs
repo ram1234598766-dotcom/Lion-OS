@@ -554,6 +554,14 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
         }
     }
 
+    // --- Runtime component manifest (the `lionos setup` picker) ---
+    // The enabled-component set chosen at install time, merged with the
+    // compulsory core and embedded at build. Print it so CI can grep exactly
+    // which components a given image was built with.
+    serial::write_str("LIONOS_MANIFEST components=");
+    serial::write_str(lionos_kernel::component_manifest::CSV);
+    serial::write_str("\r\n");
+
     // --- Month 2: page-table ownership marker ---
     // The bootloader 0.11 does NOT identity-map its own page tables (reading
     // CR3's physical address faults), so the kernel cannot read/write them to

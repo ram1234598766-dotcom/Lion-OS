@@ -24,6 +24,7 @@ extern crate alloc;
 extern crate std;
 
 pub mod ai;
+pub mod component_manifest;
 pub mod dock;
 pub mod drivers;
 pub mod elf;
