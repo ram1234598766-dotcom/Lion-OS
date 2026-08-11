@@ -25,6 +25,7 @@ use std::process::{Command, Stdio};
 use sha2::{Digest, Sha256};
 
 use crate::qemu;
+use crate::selection::Selection;
 
 /// Data directory holding logs/cache, matching `update::cache_dir`.
 fn data_dir() -> PathBuf {
@@ -423,13 +424,17 @@ fn find_repo_root() -> Option<PathBuf> {
 }
 
 /// Build `kernel`, then `os`, producing the bootable `target/bios.img`.
-fn build_disk(root: &Path) -> Result<(), String> {
+/// `component_csv` (the enabled LionOS component keys) is exported to the
+/// kernel build as `LIONOS_COMPONENTS`, which `kernel/build.rs` turns into the
+/// runtime `component_manifest`.
+fn build_disk(root: &Path, component_csv: &str) -> Result<(), String> {
     step("Building kernel + disk image (this is the long step)");
     for (cwd, label) in [("kernel", "kernel"), ("os", "disk image")] {
         println!("building {label} in {}/{} ...", root.display(), cwd);
         let status = Command::new("cargo")
             .arg("build")
             .current_dir(root.join(cwd))
+            .env("LIONOS_COMPONENTS", component_csv)
             .stdin(Stdio::inherit())
             .stdout(Stdio::inherit())
             .stderr(Stdio::inherit())
@@ -492,12 +497,43 @@ fn run_inner(skip_build: bool) -> Result<(), String> {
     if !skip_build {
         let root = find_repo_root()
             .ok_or_else(|| "cannot find repo root (need kernel/ and os/ — run from the repo)".to_string())?;
-        build_disk(&root)?;
+        // The non-interactive `install` path uses the full default selection.
+        build_disk(&root, &Selection::default().csv())?;
     } else {
         println!("skipping kernel build (-skip-build)");
     }
     println!("=== LionOS install complete ===");
     log("=== LionOS install complete ===");
+    Ok(())
+}
+
+/// The `lionos setup` entry: persist the selection, provision every compulsory
+/// host tool (never failing on an online host), then build the disk image with
+/// the choice baked into the runtime component manifest.
+pub fn run_setup(sel: &Selection) -> Result<(), String> {
+    // 1) Persist the selection so the same config drives a re-run.
+    let dir = data_dir();
+    fs::create_dir_all(&dir).map_err(|e| format!("cannot create {}: {e}", dir.display()))?;
+    let cfg_path = dir.join("config.toml");
+    fs::write(&cfg_path, sel.to_toml()).map_err(|e| format!("cannot write {}: {e}", cfg_path.display()))?;
+    println!("OK   selection saved to {}", cfg_path.display());
+    log(&format!("selection: {}", sel.csv()));
+
+    // 2) Provision every compulsory host tool. All are required; a failure here
+    //    is the only hard stop, and it names the tool + reason.
+    println!();
+    step("Provisioning required host toolchain");
+    for tool in HOST_TOOLS {
+        provision_one(tool.name)?;
+    }
+
+    // 3) Build the disk image with the component selection.
+    let root = find_repo_root()
+        .ok_or_else(|| "cannot find repo root (need kernel/ and os/ — run from the repo)".to_string())?;
+    build_disk(&root, &sel.csv())?;
+
+    println!("=== LionOS setup complete ===");
+    log("=== LionOS setup complete ===");
     Ok(())
 }
 

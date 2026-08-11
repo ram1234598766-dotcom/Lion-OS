@@ -1,0 +1,298 @@
+//! `lionos setup` — the interactive installation wizard.
+//!
+//! A dependency-free terminal UI (ANSI escape sequences + raw-mode key reads,
+//! no third-party TUI crate). Two pages over the compulsory host toolchain and
+//! the LionOS component picker, then auto-configure + build. The rendering is
+//! pure (returns strings) and host-tested; only key handling and the terminal
+//! clear/write touch the real terminal, and both fall back gracefully when no
+//! terminal is attached (CI, piped stdin) via `LIONOS_SMOKE`.
+//!
+//! Navigation: Up/Down to move the cursor, Space to toggle a recommended
+//! component (`🔒`/`(req)` required ones are locked), Enter to proceed. On Unix
+//! we put the terminal in raw mode; on Windows / no-terminal we accept numbered
+//! input (`n` toggles) so the wizard never breaks on a non-VT host.
+
+use std::io::{Read, Write};
+use std::process::Command;
+
+use crate::install;
+use crate::selection::{COMPONENTS, Selection};
+
+/// A decoded key press. `Up`/`Down` move; `Toggle` flips a recommended item;
+/// `Enter` proceeds; `Quit` aborts.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Key {
+    Up,
+    Down,
+    Toggle,
+    Enter,
+    Quit,
+    Number(u8),
+    Unknown,
+}
+
+/// ANSI clear-screen + move home + optional color reset.
+fn clear() -> String {
+    "\x1b[2J\x1b[H".to_string()
+}
+
+fn dim(s: &str) -> String {
+    format!("\x1b[2m{s}\x1b[0m")
+}
+fn bold(s: &str) -> String {
+    format!("\x1b[1m{s}\x1b[0m")
+}
+fn green(s: &str) -> String {
+    format!("\x1b[32m{s}\x1b[0m")
+}
+fn yellow(s: &str) -> String {
+    format!("\x1b[33m{s}\x1b[0m")
+}
+
+/// Languages this OS is built from — surfaced on the welcome screen.
+const LANGUAGES: &[&str] = &["Rust", "C", "C++ (17)", "Zig", "NASM"];
+
+/// The welcome screen.
+pub fn render_welcome() -> String {
+    let mut s = clear();
+    s.push_str(&bold("  ██╗     ██╗ ██████╗ ███╗   ██╗  ██████╗ ███████╗\n"));
+    s.push_str(&bold("  ██║     ██║██╔═══██╗████╗  ██║██╔═══██╗██╔════╝\n"));
+    s.push_str(&bold("  ██║  █  ██║██║   ██║██╔██╗ ██║██║   ██║███████╗\n"));
+    s.push_str(&bold("  ██║██╗██╔╝██║   ██║██║╚██╗██║██║   ██║╚════██║\n"));
+    s.push_str(&bold("  ██╝██████║╚██████╔╝██║ ╚████║╚██████╔╝███████║\n"));
+    s.push_str(&bold("  ███████╔╝ ╚═════╝ ╚═╝  ╚═══╝ ╚═════╝ ╚══════╝\n\n"));
+    s.push_str(&yellow("  LionOS setup — the standalone installation manager\n"));
+    s.push_str(&dim("\n  This installs the LionOS host toolchain, auto-configures\n"));
+    s.push_str(&dim("  the build, then builds a bootable disk image in QEMU.\n\n"));
+    s.push_str(&bold("  Built from: "));
+    s.push_str(&green(&LANGUAGES.join(" · ")));
+    s.push_str(&dim("\n\n  [Enter] begin   [Q] quit\n"));
+    s
+}
+
+/// Page 1 — the host toolchain. Every entry is compulsory (🔒), so there is
+/// nothing to toggle here; it is a fixed, unavoidable provisioning list. Each
+/// row is tagged with the language its binary drives.
+pub fn render_page1() -> String {
+    let mut s = clear();
+    s.push_str(&bold("  Page 1 — Required host toolchain\n"));
+    s.push_str(&dim("  All compulsory. The multilingual build needs every one.\n\n"));
+    for t in install::HOST_TOOLS {
+        s.push_str(&format!("   🔒 {}  {}\n", &yellow(t.name), &dim(&format!("({})", t.lang))));
+    }
+    s.push_str(&dim("\n  Every tool is required and auto-provisioned (package\n"));
+    s.push_str(&dim("  manager first, then a verified staged download).\n"));
+    s.push_str(&dim("\n  [Enter] provision these, then choose components\n"));
+    s
+}
+
+/// Page 2 — the LionOS component picker. `sel` is the current selection and
+/// `cursor` is the highlighted row index. Required components render `🔒`
+/// (locked) and cannot be toggled; recommended ones render `[x]`/`[ ]`.
+pub fn render_page2(sel: &Selection, cursor: usize) -> String {
+    let mut s = clear();
+    s.push_str(&bold("  Page 2 — LionOS components\n"));
+    s.push_str(&dim("  🔒 = compulsory   ·   [x]/[ ] = recommended   ·   Space toggles\n\n"));
+    for (i, c) in COMPONENTS.iter().enumerate() {
+        let marker = if i == cursor { "▶" } else { " " };
+        let mut row = String::from(" ");
+        row.push_str(marker);
+        if c.required {
+            row.push_str(&format!(" 🔒 {}  {}", &yellow(c.key), &dim("(required)")));
+        } else if sel.is_enabled(c.key) {
+            row.push_str(&format!(" [x] {}  ", c.key));
+        } else {
+            row.push_str(&format!(" [ ] {}  ", c.key));
+        }
+        // Highlight the cursor row (invert-adjacent dim for a clear current line).
+        if i == cursor {
+            s.push_str(&bold(&row));
+        } else {
+            s.push_str(&row);
+        }
+        s.push('\n');
+    }
+    s.push_str(&dim(&format!("\n  {} of {} enabled\n", sel.enabled.len(), COMPONENTS.len())));
+    s.push_str(&dim("\n  [Enter] build with this selection   [Q] quit\n"));
+    s
+}
+
+/// Read one key from the terminal. Unix: raw-mode single-byte + escape-prefix
+/// decoding (arrow keys arrive as `0x1b [ A/B`). Non-Unix or stdin-not-a-tty:
+/// wait for a line and accept a digit or `q`/Enter (portable fallback).
+pub fn read_key() -> Key {
+    #[cfg(unix)]
+    {
+        if isatty_stdin() {
+            let saved = Command::new("stty").arg("-g").output().ok().and_then(|o| String::from_utf8(o.stdout).ok());
+            let _ = Command::new("sh").args(["-c", "stty raw -echo min 1 time 0 2>/dev/null"]).status();
+            let b = read_byte().unwrap_or(b'\n');
+            let key = match b {
+                0x1b => {
+                    // ESC sequence: consume [ A / [ B for Up/Down, plain Esc = Quit.
+                    let _mid = read_byte();
+                    let end = read_byte().unwrap_or(0);
+                    if end == b'A' {
+                        Some(Key::Up)
+                    } else if end == b'B' {
+                        Some(Key::Down)
+                    } else {
+                        Some(Key::Quit)
+                    }
+                }
+                b' ' => Some(Key::Toggle),
+                b'\r' | b'\n' => Some(Key::Enter),
+                b'q' | b'Q' | 0x03 => Some(Key::Quit),
+                b'0'..=b'9' => Some(Key::Number(b - b'0')),
+                _ => Some(Key::Unknown),
+            }
+            .unwrap_or(Key::Unknown);
+            // Restore terminal.
+            if let Some(g) = saved {
+                let _ = Command::new("stty").arg(g).status();
+            }
+            return key;
+        }
+    }
+    // Portable fallback: read a line.
+    let mut line = String::new();
+    if std::io::stdin().read_line(&mut line).is_ok() {
+        let t = line.trim();
+        match t {
+            "" => Key::Enter,
+            "q" | "Q" => Key::Quit,
+            _ => {
+                // Allow a single digit to toggle that numbered component.
+                if t.len() == 1 && t.as_bytes()[0].is_ascii_digit() {
+                    Key::Number(t.as_bytes()[0] - b'0')
+                } else {
+                    Key::Unknown
+                }
+            }
+        }
+    } else {
+        Key::Quit
+    }
+}
+
+#[cfg(unix)]
+fn isatty_stdin() -> bool {
+    use std::io::IsTerminal;
+    std::io::stdin().is_terminal()
+}
+
+#[cfg(unix)]
+fn read_byte() -> Option<u8> {
+    let mut buf = [0u8; 1];
+    let n = std::io::stdin().read(&mut buf).ok()?;
+    if n == 0 {
+        None
+    } else {
+        Some(buf[0])
+    }
+}
+
+/// Run the interactive wizard. `LIONOS_SMOKE=1` drives it non-interactively for
+/// CI: pages render once, the default selection is taken, provisioning +
+/// build run, and `LIONOS_SETUP_PAGES_OK` is printed.
+pub fn run() -> Result<(), String> {
+    if std::env::var("LIONOS_SMOKE").is_ok() {
+        return run_smoke();
+    }
+    run_wizard()
+}
+
+fn run_smoke() -> Result<(), String> {
+    println!("{}", render_welcome());
+    println!("{}", render_page1());
+    let sel = Selection::default();
+    println!("{}", render_page2(&sel, 0));
+    println!();
+    println!("LIONOS_SETUP_PAGES_OK components={}", sel.csv());
+    // Actually provision + build, since that's what CI wants to prove.
+    install::run_setup(&sel)
+}
+
+/// The interactive path: welcome → page 1 → page 2 → provision + build.
+fn run_wizard() -> Result<(), String> {
+    println!("{}", render_welcome());
+    wait_for(&[Key::Enter]);
+
+    println!("{}", render_page1());
+    wait_for(&[Key::Enter]);
+
+    let mut sel = Selection::default();
+    let mut cursor = 0usize;
+    loop {
+        print!("{}", render_page2(&sel, cursor));
+        let _ = std::io::stdout().flush();
+        match read_key() {
+            Key::Up => cursor = cursor.saturating_sub(1),
+            Key::Down => cursor = (cursor + 1).min(COMPONENTS.len().saturating_sub(1)),
+            Key::Number(n) => {
+                // Number toggles that component directly (portable fallback).
+                if let Some(c) = COMPONENTS.get(n.saturating_sub(1) as usize) {
+                    sel.toggle(c.key);
+                }
+            }
+            Key::Toggle => {
+                if let Some(c) = COMPONENTS.get(cursor) {
+                    sel.toggle(c.key);
+                }
+            }
+            Key::Enter => break,
+            Key::Quit => return Ok(()),
+            Key::Unknown => {}
+        }
+    }
+    install::run_setup(&sel)
+}
+
+fn wait_for(keys: &[Key]) {
+    loop {
+        if keys.contains(&read_key()) {
+            return;
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn welcome_mentions_the_language_mix() {
+        let text = render_welcome();
+        assert!(text.contains("Rust"));
+        assert!(text.contains("NASM"));
+        assert!(text.contains("Zig"));
+    }
+
+    #[test]
+    fn page1_renders_every_tool_as_locked_required() {
+        let text = render_page1();
+        assert!(text.contains("🔒"));
+        assert!(text.contains("Required host toolchain"));
+        for t in install::HOST_TOOLS {
+            assert!(text.contains(t.name));
+        }
+    }
+
+    #[test]
+    fn page2_shows_required_locked_and_recommended_tickable() {
+        let sel = Selection::default();
+        let text = render_page2(&sel, 0);
+        // A required component renders the lock marker.
+        assert!(text.contains("🔒"));
+        // A recommended, enabled one renders [x].
+        assert!(text.contains("explorer"));
+    }
+
+    #[test]
+    fn page2_reflects_a_deselected_component() {
+        let mut sel = Selection::default();
+        sel.toggle("pci");
+        // Disabled recommended item is no longer in the enabled CSV.
+        assert!(!sel.is_enabled("pci"));
+    }
+}

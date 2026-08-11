@@ -7,6 +7,7 @@ mod doctor;
 mod install;
 mod qemu;
 mod selection;
+mod setup;
 mod update;
 
 use std::path::PathBuf;
@@ -54,6 +55,10 @@ enum Command {
         #[arg(long, default_value = "https://github.com/ram1234598766-dotcom/Lion-OS/releases/latest/download")]
         source: String,
     },
+    /// Interactive installation manager: welcome + host toolchain + component
+    /// picker, then auto-configures and builds the disk image. CI drives it
+    /// non-interactively with LIONOS_SMOKE=1.
+    Setup,
 }
 
 fn main() -> ExitCode {
@@ -67,6 +72,7 @@ fn main() -> ExitCode {
             install::run(skip_build, detach).map_err(|e| e.to_string())
         }
         Command::Update { source } => update::run(&source).map_err(|e| e.to_string()),
+        Command::Setup => setup::run().map_err(|e| e.to_string()),
     };
     match result {
         Ok(()) => ExitCode::SUCCESS,
