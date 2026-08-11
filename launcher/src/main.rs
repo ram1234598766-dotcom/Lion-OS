@@ -47,6 +47,10 @@ enum Command {
         /// Run the install as a detached background job, then return.
         #[arg(long)]
         detach: bool,
+        /// Fetch the prebuilt disk image from the GitHub release instead of
+        /// building from source (no repo checkout needed; provisions QEMU only).
+        #[arg(long)]
+        release: bool,
     },
     /// Download a LionOS disk image and verify its SHA-256 checksum before use.
     Update {
@@ -58,7 +62,12 @@ enum Command {
     /// Interactive installation manager: welcome + host toolchain + component
     /// picker, then auto-configures and builds the disk image. CI drives it
     /// non-interactively with LIONOS_SMOKE=1.
-    Setup,
+    Setup {
+        /// Fetch the prebuilt disk image from the GitHub release instead of
+        /// building from source (no repo checkout needed; provisions QEMU only).
+        #[arg(long)]
+        release: bool,
+    },
 }
 
 fn main() -> ExitCode {
@@ -68,11 +77,11 @@ fn main() -> ExitCode {
             .map(|_| ())
             .map_err(|e| e.to_string()),
         Command::Doctor => doctor::run().map_err(|e| e.to_string()),
-        Command::Install { skip_build, detach } => {
-            install::run(skip_build, detach).map_err(|e| e.to_string())
+        Command::Install { skip_build, detach, release } => {
+            install::run(skip_build, detach, release).map_err(|e| e.to_string())
         }
         Command::Update { source } => update::run(&source).map_err(|e| e.to_string()),
-        Command::Setup => setup::run().map_err(|e| e.to_string()),
+        Command::Setup { release } => setup::run(release).map_err(|e| e.to_string()),
     };
     match result {
         Ok(()) => ExitCode::SUCCESS,

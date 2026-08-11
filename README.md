@@ -514,12 +514,14 @@ run `lionos setup` — the interactive installation manager.
 
 | OS | Package | What it does |
 |----|---------|--------------|
-| **Windows** | `lionos-setup-*.exe` | Inno Setup installer → launches `lionos setup` |
+| **Windows** | `LionOS-Desktop-Setup-*.exe` | Inno Setup wizard → installs `lionos`, launches `lionos setup` |
 | **macOS** (arm64 + x86_64) | `lionos-*.pkg` | native package → `/usr/local/bin/lionos` |
 | **Linux** (Debian/Ubuntu) | `lionos_*_amd64.deb` | `dpkg`/`apt` → `/usr/bin/lionos` |
 
 Each also ships a plain `.tar.gz` of the `lionos` binary if you prefer not to
-use the native format.
+use the native format. Every release also carries the **prebuilt bootable disk**
+(`lionos-disk.bin` + `checksums.txt`) that `lionos setup --release` downloads
+instead of building from source.
 
 ### Method 1 — `lionos setup` (the installation manager)
 
@@ -531,9 +533,18 @@ offers to boot it in QEMU. It cannot fail on an online host — it probes first,
 auto-recovers through a fallback ladder, and surfaces the only irreducible case
 (offline with nothing cached) before committing.
 
+**No repo? Use `--release`.** `lionos setup --release` (and `lionos install
+--release`) skip the source build entirely: they provision **QEMU only**, then
+download the **prebuilt** `lionos-disk.bin` from the GitHub release
+(checksum-verified before use) and boot it. No checkout of the repo, no build
+toolchain — just the internet. This is how the OS installer packages behave out
+of the box.
+
 ```bash
 lionos setup            # interactive wizard (welcome → toolchain → picker → build)
+lionos setup --release  # fetch the prebuilt disk from GitHub instead (no repo/build)
 lionos install          # same flow, non-interactive (defaults)
+lionos install --release # prebuilt disk, non-interactive
 lionos install --detach # background job; poll with `lionos doctor`
 ```
 
@@ -1288,10 +1299,15 @@ kernel integration.
   overshoot pop for the dock/window focus, both driven off the PIT tick
   (`LIONOS_GFX_ANIM tick=… drift=… pop=…`).
 - **Installer packages for every desktop OS** — a `release.yml` workflow builds
-  `.deb` (Linux), `.pkg` (macOS arm64 + x86_64), and the Windows `.exe` on a
-  `v*` tag push and attaches them to the GitHub Release. `packaging/deb/build.sh`
-  and `packaging/pkg/build.sh` are the format builders; every package ships the
-  `lionos` launcher (and therefore `lionos setup`).
+  `.deb` (Linux), `.pkg` (macOS arm64 + x86_64), and the Windows **Inno Setup
+  wizard** `.exe` on a `v*` tag push and attaches them to the GitHub Release.
+  `packaging/deb/build.sh` and `packaging/pkg/build.sh` are the format builders;
+  every package ships the `lionos` launcher (and therefore `lionos setup`).
+- **Prebuilt-disk install (`lionos setup --release`)** — `release.yml` also
+  builds and attaches the bootable `lionos-disk.bin` + `checksums.txt`; the
+  install manager provisions QEMU only and downloads the verified prebuilt disk
+  from the GitHub release, so LionOS installs without a repo checkout or build
+  toolchain (curl-based https download added to `update.rs`).
 
 #### Changed
 

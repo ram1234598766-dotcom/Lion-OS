@@ -461,21 +461,25 @@ fn build_disk(root: &Path, component_csv: &str) -> Result<(), String> {
 // entry
 // ---------------------------------------------------------------------------
 
-/// Run the install. `skip_build` skips the kernel build; `detach` backgrounds it.
-pub fn run(skip_build: bool, detach: bool) -> Result<(), String> {
+/// Run the install. `skip_build` skips the kernel build; `detach` backgrounds it;
+/// `from_release` fetches the prebuilt disk from GitHub instead of building.
+pub fn run(skip_build: bool, detach: bool, from_release: bool) -> Result<(), String> {
     if detach {
-        return run_detached(skip_build);
+        return run_detached(skip_build, from_release);
     }
-    run_inner(skip_build)
+    run_inner(skip_build, from_release)
 }
 
 /// Spawn a detached copy of `lionos install` that finishes in the background.
-fn run_detached(skip_build: bool) -> Result<(), String> {
+fn run_detached(skip_build: bool, from_release: bool) -> Result<(), String> {
     log("launching background install job");
     let exe = std::env::current_exe().map_err(|e| format!("cannot find this binary: {e}"))?;
     let mut args = vec!["install".to_string()];
     if skip_build {
         args.push("--skip-build".to_string());
+    }
+    if from_release {
+        args.push("--release".to_string());
     }
     let logfile = File::options().create(true).append(true).open(log_path())
         .map_err(|e| format!("cannot open {}: {e}", log_path().display()))?;
@@ -492,8 +496,27 @@ fn run_detached(skip_build: bool) -> Result<(), String> {
     Ok(())
 }
 
-fn run_inner(skip_build: bool) -> Result<(), String> {
+/// The GitHub "latest release" download base — where `lionos-disk.bin` +
+/// `checksums.txt` live for a `--release` (no-repo) install.
+pub const RELEASE_BASE_URL: &str =
+    "https://github.com/ram1234598766-dotcom/Lion-OS/releases/latest/download";
+
+fn run_inner(skip_build: bool, from_release: bool) -> Result<(), String> {
     log(&format!("=== LionOS installer start (host={}, data={}) ===", os_tag(), data_dir().display()));
+    if from_release {
+        // Release install: only QEMU is needed (to boot the prebuilt image),
+        // then fetch the disk from the GitHub release — no repo, no build.
+        step("Provisioning QEMU (required to boot the prebuilt image)");
+        provision_one("qemu")?;
+        if !skip_build {
+            crate::update::run(RELEASE_BASE_URL)?;
+        } else {
+            println!("skipping prebuilt-image download (-skip-build)");
+        }
+        println!("=== LionOS install complete (prebuilt image) ===");
+        log("=== LionOS install complete (prebuilt image) ===");
+        return Ok(());
+    }
     ensure_qemu()?;          // hard requirement — abort on failure
     ensure_build_tools()?;   // nasm, Zig, mtools, g++
     ensure_rust()?;          // pinned nightly + target
@@ -510,10 +533,11 @@ fn run_inner(skip_build: bool) -> Result<(), String> {
     Ok(())
 }
 
-/// The `lionos setup` entry: persist the selection, provision every compulsory
-/// host tool (never failing on an online host), then build the disk image with
-/// the choice baked into the runtime component manifest.
-pub fn run_setup(sel: &Selection) -> Result<(), String> {
+/// The `lionos setup` entry: persist the selection, provision the tools, then
+/// either fetch the **prebuilt** disk from the GitHub release (`from_release`)
+/// or build the disk image from source with the choice baked into the runtime
+/// component manifest.
+pub fn run_setup(sel: &Selection, from_release: bool) -> Result<(), String> {
     // 1) Persist the selection so the same config drives a re-run.
     let dir = data_dir();
     fs::create_dir_all(&dir).map_err(|e| format!("cannot create {}: {e}", dir.display()))?;
@@ -522,18 +546,25 @@ pub fn run_setup(sel: &Selection) -> Result<(), String> {
     println!("OK   selection saved to {}", cfg_path.display());
     log(&format!("selection: {}", sel.csv()));
 
-    // 2) Provision every compulsory host tool. All are required; a failure here
-    //    is the only hard stop, and it names the tool + reason.
     println!();
-    step("Provisioning required host toolchain");
-    for tool in HOST_TOOLS {
-        provision_one(tool.name)?;
+    if from_release {
+        // Release install: QEMU is the only compulsory host tool (to boot), and
+        // the OS itself comes as a checksum-verified download from GitHub — no
+        // repo checkout and no build toolchain are needed.
+        step("Provisioning QEMU (required to boot the prebuilt image)");
+        provision_one("qemu")?;
+        step("Downloading prebuilt LionOS disk (checksum-verified)");
+        crate::update::run(RELEASE_BASE_URL)?;
+    } else {
+        // Source install: provision the full compulsory toolchain, then build.
+        step("Provisioning required host toolchain");
+        for tool in HOST_TOOLS {
+            provision_one(tool.name)?;
+        }
+        let root = find_repo_root()
+            .ok_or_else(|| "cannot find repo root (need kernel/ and os/ — run from the repo)".to_string())?;
+        build_disk(&root, &sel.csv())?;
     }
-
-    // 3) Build the disk image with the component selection.
-    let root = find_repo_root()
-        .ok_or_else(|| "cannot find repo root (need kernel/ and os/ — run from the repo)".to_string())?;
-    build_disk(&root, &sel.csv())?;
 
     println!("=== LionOS setup complete ===");
     log("=== LionOS setup complete ===");

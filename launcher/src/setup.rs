@@ -202,28 +202,39 @@ fn read_byte() -> Option<u8> {
 /// Run the interactive wizard. `LIONOS_SMOKE=1` drives it non-interactively for
 /// CI: pages render once, the default selection is taken, provisioning +
 /// build run, and `LIONOS_SETUP_PAGES_OK` is printed.
-pub fn run() -> Result<(), String> {
+/// `from_release` fetches the prebuilt disk from GitHub instead of building.
+pub fn run(from_release: bool) -> Result<(), String> {
     if std::env::var("LIONOS_SMOKE").is_ok() {
-        return run_smoke();
+        return run_smoke(from_release);
     }
-    run_wizard()
+    run_wizard(from_release)
 }
 
-fn run_smoke() -> Result<(), String> {
+fn run_smoke(from_release: bool) -> Result<(), String> {
     println!("{}", render_welcome());
     println!("{}", render_page1());
     let sel = Selection::default();
     println!("{}", render_page2(&sel, 0));
     println!();
     println!("LIONOS_SETUP_PAGES_OK components={}", sel.csv());
-    // Actually provision + build, since that's what CI wants to prove.
-    install::run_setup(&sel)
+    // Actually provision + build (or download the prebuilt disk), since that's
+    // what CI wants to prove.
+    install::run_setup(&sel, from_release)
 }
 
-/// The interactive path: welcome → page 1 → page 2 → provision + build.
-fn run_wizard() -> Result<(), String> {
+/// The interactive path: welcome → page 1 → page 2 → provision + build
+/// (or, with `--release`, welcome → page 1 → prebuilt-disk download).
+fn run_wizard(from_release: bool) -> Result<(), String> {
     println!("{}", render_welcome());
     wait_for(&[Key::Enter]);
+
+    if from_release {
+        // Release install: no component picker — the prebuilt image is used as
+        // published. Page 1 (the QEMU requirement) is still shown.
+        println!("{}", render_page1());
+        wait_for(&[Key::Enter]);
+        return install::run_setup(&Selection::default(), true);
+    }
 
     println!("{}", render_page1());
     wait_for(&[Key::Enter]);
@@ -252,7 +263,7 @@ fn run_wizard() -> Result<(), String> {
             Key::Unknown => {}
         }
     }
-    install::run_setup(&sel)
+    install::run_setup(&sel, false)
 }
 
 fn wait_for(keys: &[Key]) {

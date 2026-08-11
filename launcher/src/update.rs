@@ -10,6 +10,7 @@ use std::fs;
 use std::io::{Read, Write};
 use std::net::TcpStream;
 use std::path::{Path, PathBuf};
+use std::process::Command;
 
 use sha2::{Digest, Sha256};
 
@@ -86,10 +87,24 @@ fn fetch_bytes(source: &str, rel: &str) -> Result<Vec<u8>, String> {
     } else if let Some(rest) = source.strip_prefix("http://") {
         http_get(rest, rel)
     } else if source.starts_with("https://") {
-        Err("https:// sources are not supported yet (placeholder) — use a local directory or an http:// URL".into())
+        // curl handles TLS + redirects (GitHub release URLs 302 to objects).
+        // The `-sS` shows errors but not progress; output to a temp file so
+        // binary data is not mangled by any console.
+        let url = format!("{}/{}", source.trim_end_matches('/'), rel);
+        let tmp = std::env::temp_dir().join(format!("lionos-dl-{}-{}", std::process::id(), rel));
+        let status = Command::new("curl")
+            .args(["-L", "-sS", "-o"]).arg(&tmp).arg(&url)
+            .status()
+            .map_err(|e| format!("cannot spawn curl: {e}"))?;
+        let body = fs::read(&tmp).map_err(|e| format!("cannot read download: {e}"))?;
+        let _ = fs::remove_file(&tmp);
+        if !status.success() {
+            return Err(format!("GET {url} failed (curl exit {status})"));
+        }
+        Ok(body)
     } else {
         Err(format!(
-            "unsupported source {source:?} — use a local directory path or an http:// URL"
+            "unsupported source {source:?} — use a local directory path or an http(s):// URL"
         ))
     }
 }

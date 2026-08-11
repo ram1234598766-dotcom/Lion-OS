@@ -80,6 +80,22 @@ jobs:
           cp -r "$STAGE" dist
           echo "STAGE=$STAGE" >> "$GITHUB_ENV"
 
+      - name: Build Inno Setup wizard exe (Windows)
+        # The Inno Setup installer IS the double-click setup wizard for Windows:
+        # it wraps the built `lionos` binary and launches `lionos setup`.
+        if: matrix.pkg == 'exe'
+        shell: pwsh
+        run: |
+          choco install innosetup -y --no-progress | Out-Null
+          New-Item -ItemType Directory -Force -Path installer/stage | Out-Null
+          Copy-Item "launcher/target/${{ matrix.target }}/release/lionos.exe" "installer/stage/lionos.exe" -Force
+          # MyAppVersion is #defined in the .iss (bumped during the release
+          # ritual), so no /D override is needed.
+          & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" "installer/LionOS-Desktop.iss"
+          Get-ChildItem installer/LionOS-Desktop-Setup-*.exe
+          # Drop it into dist/ so merge-multiple lands it at assets/dist/*.exe.
+          Copy-Item installer/LionOS-Desktop-Setup-*.exe dist/
+
       - name: Upload installers
         uses: actions/upload-artifact@v4
         with:
@@ -88,9 +104,55 @@ jobs:
             dist/
             launcher/target/${{ matrix.target }}/release/lionos${{ matrix.os == 'windows-latest' && '.exe' || '' }}
 
+  # Build the prebuilt bootable disk image that `lionos setup --release` /
+  # `lionos install --release` download instead of building from source. The
+  # same `os` build path as publish.yml, staged as `lionos-disk.bin` +
+  # `checksums.txt` (the format `update.rs` verifies before use).
+  disk-image:
+    name: Build prebuilt disk image (lionos-disk.bin)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install kernel build toolchain (NASM + g++ + Zig 0.14)
+        run: |
+          sudo apt-get update && sudo apt-get install -y nasm g++ build-essential
+          curl -sL -o /tmp/zig.tar.xz https://ziglang.org/download/0.14.0/zig-linux-x86_64-0.14.0.tar.xz
+          sudo mkdir -p /opt/zig && sudo tar -xf /tmp/zig.tar.xz -C /opt/zig --strip-components=1
+          sudo ln -sf /opt/zig/zig /usr/local/bin/zig
+          zig version && g++ --version | head -1
+
+      - name: Install pinned nightly Rust + tools
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: nightly-2026-08-02
+          components: rust-src, llvm-tools-preview
+          targets: x86_64-unknown-none
+
+      - name: Build kernel boot image (bootloader 0.11 DiskImageBuilder)
+        working-directory: os
+        run: cargo build
+
+      - name: Stage disk + checksums
+        run: |
+          mkdir -p dist
+          cp target/bios.img dist/lionos-disk.bin
+          # update.rs expects "<sha256>  lionos-disk.bin" (two spaces).
+          sha256sum dist/lionos-disk.bin | awk '{print $1 "  lionos-disk.bin"}' > dist/checksums.txt
+          ls -la dist
+          cat dist/checksums.txt
+
+      - name: Upload disk image + checksums
+        uses: actions/upload-artifact@v4
+        with:
+          name: installers-disk
+          path: dist/
+
   release:
     name: Create GitHub Release
-    needs: package
+    needs: [package, disk-image]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -108,7 +170,8 @@ jobs:
 
       # Each package job uploaded a `dist/` directory (merge-multiple flattens
       # their contents into `assets/dist/`), so the glob must look one level
-      # down from `assets/`.
+      # down from `assets/`. The Windows Inno Setup exe is uploaded at the
+      # artifact root (assets/*.exe); the prebuilt disk is under assets/dist/.
       - name: Create release + attach installers
         uses: softprops/action-gh-release@v2
         with:
@@ -120,3 +183,5 @@ jobs:
             assets/dist/*.pkg
             assets/dist/*.tar.gz
             assets/dist/*.exe
+            assets/dist/lionos-disk.bin
+            assets/dist/checksums.txt
