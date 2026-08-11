@@ -6,6 +6,7 @@
 mod doctor;
 mod install;
 mod qemu;
+mod selection;
 mod update;
 
 use std::path::PathBuf;
