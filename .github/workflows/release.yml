@@ -183,5 +183,5 @@ jobs:
             assets/dist/*.pkg
             assets/dist/*.tar.gz
             assets/dist/*.exe
-            assets/dist/lionos-disk.bin
-            assets/dist/checksums.txt
+            assets/lionos-disk.bin
+            assets/checksums.txt
