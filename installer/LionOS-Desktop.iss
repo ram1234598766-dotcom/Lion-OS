@@ -5,7 +5,7 @@
 ; Requires a release `lionos.exe` on the `[Files]` Source path.
 
 #define MyAppName "Lion-OS Desktop"
-#define MyAppVersion "1.0.0"
+#define MyAppVersion "1.1.0"
 #define MyAppPublisher "Mrityunjay"
 #define MyAppExeName "lionos.exe"
 #define MyAppURL "https://github.com/ram1234598766-dotcom/Lion-OS"

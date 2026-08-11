@@ -24,6 +24,10 @@
 > Bochs-VBE detect**), a cooperative → **preemptive scheduler** driven by the
 > PIT, and a **read-only FAT32** filesystem over real block I/O — with C++17
 > and Zig joined to the FFI language lay.
+> **`v1.1.0` (install manager + animations):** a **`lionos setup`** interactive
+> installation manager (auto-provisions the host toolchain, component picker),
+> a runtime **component manifest**, **OS animations** (diagonal wallpaper drift
+> + dock pop), and **installer packages** for Windows/macOS/Linux (`.exe`/`.pkg`/`.deb`).
 >
 > **Platform note:** this repo is the **x86_64 (Desktop)** line, booting under
 > QEMU. The ARM64 **Android** port is a separate codebase with its own
@@ -234,7 +238,7 @@ unit-tested, and fuzzed.
 | Launcher CLI (run/doctor/update) | ✅ | v0.1.0 | cross-platform |
 | Parser unit tests + fuzzing | ✅ | v0.1.0 | 16 tests, no crashes |
 | C + asm integration | ✅ | v0.1.0 | `[ffi]` boot diagnostic + CI |
-| GHCR container image | ✅ | v1.0.0 | `ghcr.io/.../lion:v1.0.0` |
+| GHCR container image | ✅ | v1.1.0 | `ghcr.io/.../lion:v1.1.0` |
 | Interrupts (IDT/PIC/PIT/keyboard) | ✅ | v0.2.0 | IRQ_FLAGS / TIMER_TICKS / IRQ_OK |
 | Frame-backed heap + frame allocator | ✅ | v0.2.0 | `#[global_allocator]`, HEAP_OK / FRAMES |
 | Page-table **takeover** (own PML4 + CR3) | ✅ | v0.2.0 | TAKEOVER cr3= … owned=1 |
@@ -249,6 +253,10 @@ unit-tested, and fuzzed.
 | Syscalls / user mode / shell | ✅ | v0.4.0 | SYSCALL_MSR / USER_CS=2b / SHELL_READ |
 | Graphics / compositor | ✅ | v0.5.0 | GFX_CANVAS / COMPOSITE / WALL / FOCUS |
 | Dock / theme / explorer / editor / AI stub (Path A) | ✅ | v1.0.0 | THEME/EDITOR/EXPLORER/DOCK/AI_STUB |
+| **Install manager `lionos setup`** (interactive wizard) | ✅ | v1.1.0 | auto-provisions host toolchain + component picker |
+| Runtime component manifest | ✅ | v1.1.0 | `LIONOS_MANIFEST components=…` |
+| OS animations (wallpaper drift + dock pop) | ✅ | v1.1.0 | `LIONOS_GFX_ANIM tick=… drift=… pop=…` |
+| Installer packages (.deb / .pkg / .exe) | ✅ | v1.1.0 | Windows/macOS/Linux setup files |
 
 > Legend: ✅ Complete | 🔧 In Progress | 📋 Planned | 🔮 Future
 
@@ -485,7 +493,7 @@ LIONOS_INIT_OK
 ### Docker Alternative
 
 ```bash
-docker run --rm ghcr.io/ram1234598766-dotcom/lion-os/lion:v1.0.0
+docker run --rm ghcr.io/ram1234598766-dotcom/lion-os/lion:v1.1.0
 ```
 
 (Uses QEMU inside the container and streams serial output to the terminal.)
@@ -494,30 +502,45 @@ docker run --rm ghcr.io/ram1234598766-dotcom/lion-os/lion:v1.0.0
 
 ## Installation
 
-You normally get LionOS in one of two ways: the `lionos` launcher CLI, or the
-container image.
+You get LionOS one of several ways: the **OS installer packages** (the
+standalone installation manager), the `lionos` launcher CLI, or the container
+image. Every path ships the same `lionos` binary.
 
-### Method 0 — Install manager (`lionos install`)
+### Method 0 — OS installer packages (Windows / macOS / Linux)
 
-`lionos install` automatically provisions everything LionOS needs to boot —
-**including QEMU, which is a hard requirement (the install aborts if it cannot
-be installed)** — then builds the desktop image. It is written in Rust and lives
-with the launcher. Everything is streamed to the console and to
-`%USERPROFILE%\.lionos\install.log`; `--detach` runs the whole job in the
-**background** and returns immediately.
+Download the installer for your OS from the
+[Releases page](https://github.com/ram1234598766-dotcom/Lion-OS/releases), then
+run `lionos setup` — the interactive installation manager.
 
-On Windows, double-click `installer/Install-LionOS.cmd` (it self-elevates and
-invokes `lionos install --detach`). Equivalently, from a terminal:
+| OS | Package | What it does |
+|----|---------|--------------|
+| **Windows** | `lionos-setup-*.exe` | Inno Setup installer → launches `lionos setup` |
+| **macOS** (arm64 + x86_64) | `lionos-*.pkg` | native package → `/usr/local/bin/lionos` |
+| **Linux** (Debian/Ubuntu) | `lionos_*_amd64.deb` | `dpkg`/`apt` → `/usr/bin/lionos` |
 
-```powershell
-lionos install            # provision QEMU + deps + toolchain, then build
-lionos install --detach   # same, but as a detached background job
-lionos install --skip-build  # provision deps/toolchain only
+Each also ships a plain `.tar.gz` of the `lionos` binary if you prefer not to
+use the native format.
+
+### Method 1 — `lionos setup` (the installation manager)
+
+`lionos setup` is the interactive wizard that **auto-configures everything**:
+it walks you through the required host toolchain (QEMU, Rust, nasm, g++, Zig,
+mtools — all compulsory) and the LionOS component picker (🔒 core vs recommended
+apps/drivers), then provisions the tools, builds the bootable disk image, and
+offers to boot it in QEMU. It cannot fail on an online host — it probes first,
+auto-recovers through a fallback ladder, and surfaces the only irreducible case
+(offline with nothing cached) before committing.
+
+```bash
+lionos setup            # interactive wizard (welcome → toolchain → picker → build)
+lionos install          # same flow, non-interactive (defaults)
+lionos install --detach # background job; poll with `lionos doctor`
 ```
 
-Then boot with `lionos run`.
+On Windows, double-click `installer/Install-LionOS.cmd` (it self-elevates and
+invokes `lionos setup`). Then boot with `lionos run`.
 
-### Method 1 — `lionos` launcher CLI
+### Method 2 — `lionos` launcher CLI
 
 Download the latest `lionos` binary for your OS from the
 [Releases page](https://github.com/ram1234598766-dotcom/Lion-OS/releases), then:
@@ -527,13 +550,13 @@ lionos doctor     # confirms QEMU and prints install help if missing
 lionos run        # boots the kernel in QEMU
 ```
 
-### Method 2 — Containers (GHCR)
+### Method 3 — Containers (GHCR)
 
 ```bash
-docker run --rm ghcr.io/ram1234598766-dotcom/lion-os/lion:v1.0.0
+docker run --rm ghcr.io/ram1234598766-dotcom/lion-os/lion:v1.1.0
 ```
 
-### Method 3 — From source
+### Method 4 — From source
 
 ```bash
 git clone https://github.com/ram1234598766-dotcom/Lion-OS.git
@@ -1215,6 +1238,17 @@ kernel integration.
       dock app bar (theming/editor/explorer/ai)
 - [ ] (or) Path B: deepen fuzzing, bare-metal attempt, CI matrix, docs
 
+### Version 1.1 — Install manager + animations *(shipped)*
+
+
+- [x] **`lionos setup`** — interactive installation manager (welcome + compulsory
+      host toolchain + component picker), auto-provisions + builds
+- [x] Runtime **component manifest** (`LIONOS_MANIFEST`) from the picker selection
+- [x] **OS animations** — diagonal wallpaper drift + dock pop-ease
+      (`LIONOS_GFX_ANIM`)
+- [x] **Installer packages** for all desktop OSes — Windows `.exe`, macOS `.pkg`,
+      Linux `.deb` (`.tar.gz` fallbacks), built by `release.yml` on tag push
+
 ### Long Term Goals
 
 - Real memory manager + interrupts (0.2)
@@ -1228,7 +1262,44 @@ kernel integration.
 
 ## Changelog
 
-### [Unreleased] — post-v1.0.0 (ELF loader + hardening)
+### [v1.1.0] — install manager + animations + packaging
+
+#### Added
+
+- **`lionos setup` — interactive installation manager** (`launcher/src/setup.rs`,
+  dependency-free ANSI TUI). A one-binary wizard: welcome screen (the
+  multilingual Rust/C/C++/Zig/NASM stack), **Page 1** — the required host
+  toolchain (QEMU, Rust, nasm, g++, Zig, mtools — all **compulsory**, each
+  tagged with the language it compiles), and **Page 2** — the LionOS component
+  picker (🔒 compulsory core vs recommended apps/drivers, toggled with arrow
+  keys + Space). On continue it persists `.lionos/config.toml`, auto-provisions
+  the toolchain through a fallback ladder (package manager → verified staged
+  download into `~/.lionos/toolchain/bin`), builds the disk image, and offers to
+  boot. **Never fails on an online host** — probe-first, auto-recover through
+  every rung; the one irreducible case (offline + nothing cached) is surfaced on
+  the welcome screen instead of mid-build.
+- **Runtime component manifest** — `lionos setup`'s component choice reaches
+  the kernel: `build_disk` exports `LIONOS_COMPONENTS` → `kernel/build.rs`
+  generates a `component_manifest.rs` (merged with the compulsory core) → boot
+  prints `LIONOS_MANIFEST components=…`. Dropping a component disables it at
+  boot (hybrid gating; the binary is not shrunk).
+- **OS animations** (`kernel/src/gfx.rs`) — `wallpaper_drift(canvas, tick)`
+  drifts the wallpaper diagonally, and `ease_out_back`/`dock_pop` add a bounded
+  overshoot pop for the dock/window focus, both driven off the PIT tick
+  (`LIONOS_GFX_ANIM tick=… drift=… pop=…`).
+- **Installer packages for every desktop OS** — a `release.yml` workflow builds
+  `.deb` (Linux), `.pkg` (macOS arm64 + x86_64), and the Windows `.exe` on a
+  `v*` tag push and attaches them to the GitHub Release. `packaging/deb/build.sh`
+  and `packaging/pkg/build.sh` are the format builders; every package ships the
+  `lionos` launcher (and therefore `lionos setup`).
+
+#### Changed
+
+- Inno Setup now launches `lionos setup` (the interactive install manager)
+  instead of a read-only `doctor` after install.
+- Feature matrix, Docker refs, and roadmap bumped to `v1.1.0`.
+
+#### Retained from post-v1.0.0 hardening (no longer "Unreleased")
 
 - **ELF loader** — the ring-3 user program is now a **real compiled ELF**
   (`user/` crate) embedded and loaded by `kernel/src/elf.rs` + `user.rs`:

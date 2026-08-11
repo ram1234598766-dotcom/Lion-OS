@@ -1,0 +1,119 @@
+name: release
+
+# Builds and uploads the LionOS installer packages for every desktop OS on a
+# `v*` tag push, then attaches them to a GitHub Release. The GHCR container
+# image is published separately by `publish.yml` on the same tag trigger.
+#
+# Package formats per OS (the standalone installation manager `lionos setup`
+# ships inside every one — the package is the launcher, not the OS):
+#   Linux   -> .deb  (packaging/deb/build.sh)  + .tar.gz
+#   macOS   -> .pkg  (packaging/pkg/build.sh)  + .tar.gz
+#   Windows -> .exe  (the release `lionos` binary; the Inno Setup wizard that
+#                     launches `lionos setup` is produced separately)
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  package:
+    name: package (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            pkg: deb
+          - os: macos-14
+            target: aarch64-apple-darwin
+            pkg: pkg
+          - os: macos-15-intel
+            target: x86_64-apple-darwin
+            pkg: pkg
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            pkg: exe
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Build launcher (release)
+        working-directory: launcher
+        run: cargo build --release --target ${{ matrix.target }}
+
+      # Version = the tag sans the leading "v" (v1.1.0 -> 1.1.0).
+      - name: Compute version
+        id: ver
+        run: |
+          echo "ver=${{ github.ref_name }}" | sed 's/^v//'
+          echo "ver=$(echo '${{ github.ref_name }}' | sed 's/^v//')" >> "$GITHUB_OUTPUT"
+
+      - name: Stage installers
+        shell: bash
+        run: |
+          set -euo pipefail
+          VERSION="${{ steps.ver.outputs.ver }}"
+          STAGE="$(mktemp -d)"
+          BIN="launcher/target/${{ matrix.target }}/release/lionos${{ matrix.os == 'windows-latest' && '.exe' || '' }}"
+          cp "$BIN" "$STAGE/lionos${{ matrix.os == 'windows-latest' && '.exe' || '' }}"
+
+          if [[ "${{ matrix.pkg }}" == "deb" ]]; then
+            packaging/deb/build.sh "$STAGE/lionos" "$VERSION" "$STAGE"
+            tar -czf "$STAGE/lionos-${VERSION}-linux-x86_64.tar.gz" -C "$STAGE" lionos
+          elif [[ "${{ matrix.pkg }}" == "pkg" ]]; then
+            packaging/pkg/build.sh "$STAGE/lionos" "$VERSION" "$STAGE"
+            ARCH="${{ matrix.target == 'aarch64-apple-darwin' && 'aarch64' || 'x86_64' }}"
+            tar -czf "$STAGE/lionos-${VERSION}-macos-${ARCH}.tar.gz" -C "$STAGE" lionos
+          fi
+
+          ls -la "$STAGE"
+          # Upload the whole staged dir as one artifact.
+          cp -r "$STAGE" dist
+          echo "STAGE=$STAGE" >> "$GITHUB_ENV"
+
+      - name: Upload installers
+        uses: actions/upload-artifact@v4
+        with:
+          name: installers-${{ matrix.os }}
+          path: |
+            dist/
+            launcher/target/${{ matrix.target }}/release/lionos${{ matrix.os == 'windows-latest' && '.exe' || '' }}
+
+  release:
+    name: Create GitHub Release
+    needs: package
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download all installer packages
+        uses: actions/download-artifact@v4
+        with:
+          path: assets
+          merge-multiple: true
+
+      - name: List assets
+        run: ls -laR assets
+
+      - name: Create release + attach installers
+        uses: softprops/action-gh-release@v2
+        with:
+          name: ${{ github.ref_name }}
+          tag_name: ${{ github.ref_name }}
+          generate_release_notes: true
+          files: |
+            assets/*.deb
+            assets/*.pkg
+            assets/*.tar.gz
+            assets/*.exe
