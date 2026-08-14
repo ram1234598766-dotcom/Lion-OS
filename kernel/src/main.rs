@@ -519,43 +519,57 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
         let fb_slice =
             unsafe { core::slice::from_raw_parts_mut(fb.buffer_mut().as_mut_ptr(), f_total) };
         if let Some(mut front) = lionos_kernel::gfx::Canvas::new(fb_slice, fw, fh, fpitch, fbpp) {
+            // The 64 KiB kernel heap cannot hold a full-screen back buffer
+            // (1280*720*3 = 2.7 MiB), so the desktop is drawn directly on the
+            // bootloader framebuffer ("front"). A small back buffer is kept as
+            // a preview panel so the double-buffer present path stays exercised.
+            use lionos_kernel::gfx::{Window, dock_pop, focus, paint_scene, wallpaper_drift};
+            let ticks = interrupts::ticks() as u32;
             front.fill_rect(40, 40, 32, 32, 0x0000ff);
             serial::write_raw(b"LIONOS_GFX_CANVAS ok\r\n");
-            // Double-buffer present + compositor/wallpaper/input-routing demo.
+            // (a) full-screen animated wallpaper (diagonal drift over a vertical
+            //     gradient), covering the boot test pattern underneath.
+            wallpaper_drift(&mut front, ticks);
+            serial::write_raw(b"LIONOS_GFX_WALL ok\r\n");
+            // (b) taskbar strip + dock buttons (painted after the wallpaper so
+            //     they sit on top).
+            let bar_h = 48usize;
+            front.fill_rect(0, fh - bar_h, fw, bar_h, 0x101418);
+            let dock = [0x00ff80u32, 0x0044ff, 0xffaa00, 0xcc3366];
+            for (i, color) in dock.iter().enumerate() {
+                front.fill_rect(16 + i * 64, fh - bar_h + 8, 48, 32, *color);
+            }
+            // (c) two-window compositor scene (painter's algorithm) sized to be
+            //     clearly visible in a screenshot.
+            let wins = [
+                Window { x: 80, y: 60, w: 360, h: 260, color: 0x00ff80 }, // bottom
+                Window { x: 300, y: 140, w: 320, h: 220, color: 0x0044ff }, // top
+            ];
+            paint_scene(&mut front, &wins);
+            serial::write_raw(b"LIONOS_GFX_COMPOSITE nwins=");
+            serial::write_dec(wins.len() as u64);
+            serial::write_str("\r\n");
+            // (d) input routing: focus the top-most window under the cursor.
+            let focused = focus(&wins, 400, 200);
+            serial::write_raw(b"LIONOS_GFX_FOCUS win=");
+            serial::write_dec(focused.unwrap_or(0) as u64);
+            serial::write_str("\r\n");
+            // (e) back-buffer preview panel (96x64) presented into the bottom
+            //     right corner, above the taskbar.
             if let Some(mut back) = lionos_kernel::gfx::BackBuffer::new(96, 64, 3) {
-                // (a) animated diagonal-drift wallpaper on the back buffer, tick depends on
-                //    the CPU (deterministic for a fixed VM), exercising the new
-                //    drifting phase on top of the plain vertical gradient.
-                use lionos_kernel::gfx::{Window, dock_pop, focus, paint_scene, wallpaper_drift};
-                wallpaper_drift(&mut back.canvas, interrupts::ticks() as u32);
-                serial::write_raw(b"LIONOS_GFX_WALL ok\r\n");
-                // (b) a two-window compositor scene (painter's algorithm).
-                let wins = [
-                    Window { x: 4, y: 4, w: 40, h: 56, color: 0x00ff80 }, // bottom
-                    Window { x: 20, y: 16, w: 26, h: 26, color: 0x0044ff }, // top
-                ];
-                paint_scene(&mut back.canvas, &wins);
-                serial::write_raw(b"LIONOS_GFX_COMPOSITE nwins=");
-                serial::write_dec(wins.len() as u64);
-                serial::write_str("\r\n");
-                // (c) input routing: focus the top-most window under the cursor.
-                let focused = focus(&wins, 24, 24);
-                serial::write_raw(b"LIONOS_GFX_FOCUS win=");
-                serial::write_dec(focused.unwrap_or(0) as u64);
-                serial::write_str("\r\n");
-                // (d) present the composite to the front.
-                let copied = front.blit_from(&back.canvas, 48, 48, 0, 0);
+                wallpaper_drift(&mut back.canvas, ticks);
+                let copied = front.blit_from(&back.canvas, 96, 64, fw - 112, fh - bar_h - 80);
                 serial::write_raw(b"LIONOS_GFX_DBLBUF present=");
                 serial::write_dec(copied as u64);
                 serial::write_str("\r\n");
-                // (e) animation marker: the dock pop-ease and the wallpaper drift
+                // (f) animation marker: the dock pop-ease and the wallpaper drift
                 //     both run off the same PIT tick (deterministic per VM).
                 serial::write_raw(b"LIONOS_GFX_ANIM tick=");
-                serial::write_dec(interrupts::ticks() as u64);
+                serial::write_dec(u64::from(ticks));
                 serial::write_raw(b" drift=");
-                serial::write_dec(dock_pop(interrupts::ticks() as f32 * 0.05, 0, 2) as u64);
+                serial::write_dec(dock_pop(ticks as f32 * 0.05, 0, 2) as u64);
                 serial::write_raw(b" pop=");
-                serial::write_dec((interrupts::ticks() % 3) as u64);
+                serial::write_dec(u64::from(ticks % 3));
                 serial::write_str("\r\n");
             } else {
                 serial::write_raw(b"LIONOS_GFX_DBLBUF_ERR\r\n");

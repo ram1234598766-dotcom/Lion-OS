@@ -264,11 +264,19 @@ unit-tested, and fuzzed.
 
 ## Screenshots & Demos
 
-### Screenshot 1 — Headless serial boot
+### Screenshot 1 — Graphical desktop (v1.1.0)
 
-```
-Screenshot placeholder
-```
+![LionOS desktop](docs/screenshots/lionos_desktop.png)
+
+The Month 5 GFX demo paints a full desktop directly on the bootloader
+framebuffer: an animated wallpaper drift, a taskbar with dock buttons, a
+two-window compositor scene (painter's algorithm), and a double-buffered
+preview panel — all driven by the PIT tick. The 64 KiB kernel heap cannot hold
+a full-screen back buffer (1280×720×3 ≈ 2.7 MiB), so the desktop is drawn on
+the mapped framebuffer and a small 96×64 back buffer exercises the
+double-buffer present path.
+
+### Screenshot 2 — Headless serial boot
 
 Boot is terminal-only today (`-nographic -serial stdio`); CI and the container
 consume the same serial stream. Expect:
@@ -288,8 +296,9 @@ LIONOS_INIT_OK
 Demo link placeholder
 ```
 
-QEMU is the only renderer today — no graphical kernel output yet (that is
-v0.5). Grab the latest release and `lionos run` to see the serial boot.
+QEMU is the only renderer today. Grab the latest release and `lionos run` to
+see the serial boot, or use the graphical QEMU invocation below to see the
+desktop.
 
 ---
 
@@ -684,6 +693,19 @@ timeout 45 qemu-system-x86_64 -accel tcg \
   -nographic
 ```
 
+To see the graphical desktop (and capture a screenshot), run QEMU with a
+display and use the QMP monitor's `screendump`:
+
+```bash
+qemu-system-x86_64 -accel tcg -no-reboot \
+  -display none -vga std \
+  -monitor unix:/tmp/mon.sock,server,nowait \
+  -drive format=raw,file=target/bios.img &
+sleep 10
+echo screendump /tmp/lionos.ppm | socat - UNIX-CONNECT:/tmp/mon.sock
+convert /tmp/lionos.ppm /tmp/lionos.png   # or: magick /tmp/lionos.ppm /tmp/lionos.png
+```
+
 #### Options
 
 | Flag / Option | Description |
@@ -692,6 +714,8 @@ timeout 45 qemu-system-x86_64 -accel tcg \
 | `-nographic` | Serial to stdio, no window. |
 | `-no-reboot` | Stop on triple-fault (remember: `-no-reboot` + `-d int` shows the fault). |
 | `-s -S` | gdb stub (see Debugging). |
+| `-display none -vga std` | Headless graphical mode; the kernel's VBE framebuffer is still mapped. |
+| `-monitor unix:…` | QMP/HMP monitor over a Unix socket for `screendump`. |
 
 ### Method 3 — Container
 

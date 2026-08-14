@@ -16,11 +16,11 @@ const hw_table: HwTable = blk: {
     break :blk t;
 };
 
-export fn lionos_zig_magic() callconv(.C) u32 {
+export fn lionos_zig_magic() callconv(.c) u32 {
     // "zig" on a phone keypad = 9-4-4; deterministic boot-smoke value.
     return 0x0000_0944;
 }
 
-export fn lionos_zig_table_magic() callconv(.C) u32 {
+export fn lionos_zig_table_magic() callconv(.c) u32 {
     return hw_table.magic;
 }
