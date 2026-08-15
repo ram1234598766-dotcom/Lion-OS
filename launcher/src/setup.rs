@@ -55,6 +55,9 @@ fn green(s: &str) -> String {
 fn yellow(s: &str) -> String {
     format!("\x1b[33m{s}\x1b[0m")
 }
+fn red(s: &str) -> String {
+    format!("\x1b[31m{s}\x1b[0m")
+}
 
 /// Languages this OS is built from — surfaced on the welcome screen.
 const LANGUAGES: &[&str] = &["Rust", "C", "C++ (17)", "Zig", "NASM"];
@@ -122,6 +125,68 @@ pub fn render_page2(sel: &Selection, cursor: usize) -> String {
     s.push_str(&dim(&format!("\n  {} of {} enabled\n", sel.enabled.len(), COMPONENTS.len())));
     s.push_str(&dim("\n  [Enter] build with this selection   [Q] quit\n"));
     s
+}
+
+/// Page 3 — live provisioning/build progress. `steps` is the ordered step list
+/// and `status` parallels it: `Some(true)` = done, `Some(false)` = failed,
+/// `None` = pending. The screen is re-rendered in place after every step.
+pub fn render_page3(steps: &[&'static str], status: &[Option<bool>]) -> String {
+    let mut s = clear();
+    s.push_str(&bold("  Page 3 — Provisioning & build\n"));
+    s.push_str(&dim("  Installing the host toolchain, then building the disk image.\n\n"));
+    for (i, name) in steps.iter().enumerate() {
+        let mark = match status.get(i) {
+            Some(Some(true)) => green("✓"),
+            Some(Some(false)) => red("✗"),
+            _ => dim("·"),
+        };
+        s.push_str(&format!("   {mark}  {name}\n"));
+    }
+    s.push_str(&dim("\n  This can take a few minutes. The install log records\n"));
+    s.push_str(&dim(&format!("  every step: {}", install::log_path().display())));
+    s
+}
+
+/// The final screen after provisioning + build. `ok` is the overall result;
+/// on failure `error` carries the first failing step's message.
+pub fn render_finish(sel: &Selection, ok: bool, error: Option<&str>) -> String {
+    let mut s = clear();
+    if ok {
+        s.push_str(&green(&bold("  ✓ LionOS setup complete")));
+        s.push_str(&dim("\n\n  The bootable disk image is ready.\n"));
+    } else {
+        s.push_str(&red(&bold("  ✗ LionOS setup failed")));
+        if let Some(e) = error {
+            s.push_str(&red(&format!("\n\n  {e}")));
+        }
+        s.push_str(&dim("\n\n  Fix the step above and re-run `lionos setup`."));
+    }
+    s.push_str(&dim(&format!("\n  Components enabled: {}", sel.csv())));
+    s.push_str(&dim(&format!("\n  Install log: {}", install::log_path().display())));
+    s.push_str(&green("\n\n  lionos run"));
+    s
+}
+
+/// Drive `install::run_setup_with_progress` while re-rendering page 3 after
+/// every step, then print the finish screen. Shared by the smoke path and the
+/// interactive wizard so both show identical progress.
+fn run_with_progress(sel: &Selection, from_release: bool, steps: &[&'static str]) -> Result<(), String> {
+    let mut status: Vec<Option<bool>> = vec![None; steps.len()];
+    print!("{}", render_page3(steps, &status));
+    let _ = std::io::stdout().flush();
+    let res = install::run_setup_with_progress(sel, from_release, |name, ok| {
+        if let Some(i) = steps.iter().position(|&s| s == name) {
+            status[i] = Some(ok);
+        }
+        print!("{}", render_page3(steps, &status));
+        let _ = std::io::stdout().flush();
+    });
+    let (ok, err) = match &res {
+        Ok(()) => (true, None),
+        Err(e) => (false, Some(e.as_str())),
+    };
+    println!("{}", render_finish(sel, ok, err));
+    res
 }
 
 /// Read one key from the terminal. Unix: raw-mode single-byte + escape-prefix
@@ -218,8 +283,14 @@ fn run_smoke(from_release: bool) -> Result<(), String> {
     println!();
     println!("LIONOS_SETUP_PAGES_OK components={}", sel.csv());
     // Actually provision + build (or download the prebuilt disk), since that's
-    // what CI wants to prove.
-    install::run_setup(&sel, from_release)
+    // what CI wants to prove. Page 3 shows live progress; the finish screen
+    // summarizes the outcome.
+    let steps: Vec<&'static str> = if from_release {
+        vec!["qemu", "prebuilt disk"]
+    } else {
+        install::HOST_TOOLS.iter().map(|t| t.name).chain(std::iter::once("build")).collect()
+    };
+    run_with_progress(&sel, from_release, &steps)
 }
 
 /// The interactive path: welcome → page 1 → page 2 → provision + build
@@ -233,7 +304,7 @@ fn run_wizard(from_release: bool) -> Result<(), String> {
         // published. Page 1 (the QEMU requirement) is still shown.
         println!("{}", render_page1());
         wait_for(&[Key::Enter]);
-        return install::run_setup(&Selection::default(), true);
+        return run_with_progress(&Selection::default(), true, &["qemu", "prebuilt disk"]);
     }
 
     println!("{}", render_page1());
@@ -263,7 +334,9 @@ fn run_wizard(from_release: bool) -> Result<(), String> {
             Key::Unknown => {}
         }
     }
-    install::run_setup(&sel, false)
+    let steps: Vec<&'static str> =
+        install::HOST_TOOLS.iter().map(|t| t.name).chain(std::iter::once("build")).collect();
+    run_with_progress(&sel, false, &steps)
 }
 
 fn wait_for(keys: &[Key]) {
@@ -312,5 +385,53 @@ mod tests {
         sel.toggle("pci");
         // Disabled recommended item is no longer in the enabled CSV.
         assert!(!sel.is_enabled("pci"));
+    }
+
+    #[test]
+    fn page3_renders_pending_then_done_steps() {
+        let steps: &[&'static str] = &["qemu", "rust", "build"];
+        let pending: Vec<Option<bool>> = vec![None; steps.len()];
+        let text = render_page3(steps, &pending);
+        assert!(text.contains("Page 3"));
+        assert!(text.contains("qemu"));
+        assert!(text.contains("rust"));
+        assert!(text.contains("build"));
+        // Pending steps render a dim dot, never a checkmark.
+        assert!(text.contains('·'));
+        assert!(!text.contains('✓'));
+
+        let done: Vec<Option<bool>> = steps.iter().map(|_| Some(true)).collect();
+        let text = render_page3(steps, &done);
+        assert!(text.contains('✓'));
+        assert!(!text.contains('✗'));
+    }
+
+    #[test]
+    fn page3_marks_a_failed_step() {
+        let steps: &[&'static str] = &["qemu", "build"];
+        let status = [Some(true), Some(false)];
+        let text = render_page3(steps, &status);
+        assert!(text.contains('✓'));
+        assert!(text.contains('✗'));
+    }
+
+    #[test]
+    fn finish_success_is_green_and_lists_components() {
+        let sel = Selection::default();
+        let text = render_finish(&sel, true, None);
+        assert!(text.contains("setup complete"));
+        assert!(text.contains(&sel.csv()));
+        assert!(text.contains("lionos run"));
+        // A successful finish never shows the failure banner.
+        assert!(!text.contains("setup failed"));
+    }
+
+    #[test]
+    fn finish_failure_shows_the_error_and_log_path() {
+        let sel = Selection::default();
+        let text = render_finish(&sel, false, Some("qemu could not be provisioned"));
+        assert!(text.contains("setup failed"));
+        assert!(text.contains("qemu could not be provisioned"));
+        assert!(text.contains("install.log"));
     }
 }

@@ -38,7 +38,7 @@ fn data_dir() -> PathBuf {
     PathBuf::from(home).join(".lionos")
 }
 
-fn log_path() -> PathBuf {
+pub(crate) fn log_path() -> PathBuf {
     data_dir().join("install.log")
 }
 
@@ -533,11 +533,16 @@ fn run_inner(skip_build: bool, from_release: bool) -> Result<(), String> {
     Ok(())
 }
 
-/// The `lionos setup` entry: persist the selection, provision the tools, then
-/// either fetch the **prebuilt** disk from the GitHub release (`from_release`)
-/// or build the disk image from source with the choice baked into the runtime
-/// component manifest.
-pub fn run_setup(sel: &Selection, from_release: bool) -> Result<(), String> {
+/// The `lionos setup` entry with per-step progress reporting: persist the
+/// selection, then either fetch the **prebuilt** disk from the GitHub release
+/// (`from_release`) or build the disk image from source with the choice baked
+/// into the runtime component manifest. `on_step` is invoked with each step's
+/// name and its success/failure outcome as that step finishes.
+pub fn run_setup_with_progress(
+    sel: &Selection,
+    from_release: bool,
+    mut on_step: impl FnMut(&'static str, bool),
+) -> Result<(), String> {
     // 1) Persist the selection so the same config drives a re-run.
     let dir = data_dir();
     fs::create_dir_all(&dir).map_err(|e| format!("cannot create {}: {e}", dir.display()))?;
@@ -551,23 +556,25 @@ pub fn run_setup(sel: &Selection, from_release: bool) -> Result<(), String> {
         // Release install: QEMU is the only compulsory host tool (to boot), and
         // the OS itself comes as a checksum-verified download from GitHub — no
         // repo checkout and no build toolchain are needed.
-        step("Provisioning QEMU (required to boot the prebuilt image)");
-        provision_one("qemu")?;
-        step("Downloading prebuilt LionOS disk (checksum-verified)");
-        crate::update::run(RELEASE_BASE_URL)?;
+        let res = provision_one("qemu");
+        on_step("qemu", res.is_ok());
+        res?;
+        let res = crate::update::run(RELEASE_BASE_URL);
+        on_step("prebuilt disk", res.is_ok());
+        res?;
     } else {
         // Source install: provision the full compulsory toolchain, then build.
-        step("Provisioning required host toolchain");
         for tool in HOST_TOOLS {
-            provision_one(tool.name)?;
+            let res = provision_one(tool.name);
+            on_step(tool.name, res.is_ok());
+            res?;
         }
         let root = find_repo_root()
             .ok_or_else(|| "cannot find repo root (need kernel/ and os/ — run from the repo)".to_string())?;
-        build_disk(&root, &sel.csv())?;
+        let res = build_disk(&root, &sel.csv());
+        on_step("build", res.is_ok());
+        res?;
     }
-
-    println!("=== LionOS setup complete ===");
-    log("=== LionOS setup complete ===");
     Ok(())
 }
 
