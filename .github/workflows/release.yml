@@ -10,6 +10,7 @@ name: release
 #   macOS   -> .pkg  (packaging/pkg/build.sh)  + .tar.gz
 #   Windows -> .exe  (the release `lionos` binary; the Inno Setup wizard that
 #                     launches `lionos setup` is produced separately)
+#                     + .tar.gz
 
 on:
   push:
@@ -73,6 +74,8 @@ jobs:
             packaging/pkg/build.sh "$STAGE/lionos" "$VERSION" "$STAGE"
             ARCH="${{ matrix.target == 'aarch64-apple-darwin' && 'aarch64' || 'x86_64' }}"
             tar -czf "$STAGE/lionos-${VERSION}-macos-${ARCH}.tar.gz" -C "$STAGE" lionos
+          elif [[ "${{ matrix.pkg }}" == "exe" ]]; then
+            tar -czf "$STAGE/lionos-${VERSION}-windows-x86_64.tar.gz" -C "$STAGE" lionos.exe
           fi
 
           ls -la "$STAGE"
