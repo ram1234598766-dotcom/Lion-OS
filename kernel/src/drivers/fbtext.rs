@@ -24,9 +24,10 @@ pub const LINE_ADVANCE: u32 = GLYPH_H as u32 + 1;
 /// here and by the C layer.
 pub unsafe fn put_char(fb: &FramebufferInfo, x: u32, y: u32, c: char, fg: u32) {
     let g = glyph(c);
-    for (col, &mask) in g.iter().enumerate() {
-        for row in 0..GLYPH_H {
-            if mask & (1 << row) != 0 {
+    // Row-major: each byte is one row, bit `col` (0 = leftmost) marks the column.
+    for (row, &mask) in g.iter().enumerate() {
+        for col in 0..GLYPH_W {
+            if mask & (1 << col) != 0 {
                 // SAFETY: fb_pixel bounds-checks; x/y clipped below.
                 unsafe {
                     ffi::fb_pixel(fb.address as *mut u8, fb.width, fb.height, fb.pitch,

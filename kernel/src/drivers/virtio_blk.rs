@@ -117,7 +117,9 @@ fn virt(phys: u64) -> u64 { phys + paging::phys_offset() }
 /// A modern virtio-blk device with a live virtqueue.
 #[cfg(target_os = "none")]
 pub struct VirtioBlk {
-    d: PciDevice,
+    // The PCI record is kept for diagnostics/registers, but nothing reads it
+    // yet — `_d` documents intent while staying warning-free.
+    _d: PciDevice,
     common: u64,
     notify: u64,
     notify_mult: u32,
@@ -143,7 +145,7 @@ impl VirtioBlk {
         let d = pci::probe_bus0().into_iter().find(|d| is_virtio_blk(d.vendor, d.device, d.class))?;
         let (common, notify, mult, _devcfg) = caps(&d)?;
         let mut v = VirtioBlk {
-            d, common, notify, notify_mult: mult,
+            _d: d, common, notify, notify_mult: mult,
             qsz: 0, fr_desc: 0, fr_avail: 0, fr_used: 0, fr_buf: 0,
             avail_head: Cell::new(0),
         };

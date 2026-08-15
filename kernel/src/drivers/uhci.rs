@@ -17,7 +17,7 @@ use crate::drivers::pci::{self, PciDevice};
 /// Intel PCI vendor id (UHCI controllers are always Intel).
 pub const INTEL_VENDOR: u16 = 0x8086;
 /// Intel UHCI USB host controller device id, device 0.
-pub const UHCI_8086_0x7020: u16 = 0x7020;
+pub const UHCI_8086_0X7020: u16 = 0x7020;
 
 /// Is this PCI (vendor, device) an Intel UHCI host controller? Pure, host-tested.
 pub fn is_uhci(vendor: u16, device: u16) -> bool {

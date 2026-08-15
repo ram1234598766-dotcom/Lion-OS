@@ -80,6 +80,26 @@ fn to_kind(k: MemoryRegionKind) -> RegionKind {
     }
 }
 
+/// Render `n` in decimal into `buf`, returning a `&str` view of the digits.
+/// Used by the taskbar clock; keeps the no_std boot path free of fmt machinery.
+fn dec_ascii(n: u32, buf: &mut [u8; 12]) -> &str {
+    let mut i = buf.len();
+    let mut n = n;
+    if n == 0 {
+        i -= 1;
+        buf[i] = b'0';
+    } else {
+        while n > 0 && i > 0 {
+            i -= 1;
+            buf[i] = b'0' + (n % 10) as u8;
+            n /= 10;
+        }
+    }
+    // SAFETY: every byte written above is an ASCII digit, so the slice is
+    // valid UTF-8 by construction.
+    unsafe { core::str::from_utf8_unchecked(&buf[i..]) }
+}
+
 fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
     serial::init();
 
@@ -523,7 +543,10 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
             // (1280*720*3 = 2.7 MiB), so the desktop is drawn directly on the
             // bootloader framebuffer ("front"). A small back buffer is kept as
             // a preview panel so the double-buffer present path stays exercised.
-            use lionos_kernel::gfx::{Window, dock_pop, focus, paint_scene, wallpaper_drift};
+            use lionos_kernel::drivers::font5x7::{GLYPH_H, GLYPH_W};
+            use lionos_kernel::gfx::{
+                Window, decorate_window, dock_pop, focus, paint_scene, wallpaper_drift,
+            };
             let ticks = interrupts::ticks() as u32;
             front.fill_rect(40, 40, 32, 32, 0x0000ff);
             serial::write_raw(b"LIONOS_GFX_CANVAS ok\r\n");
@@ -535,10 +558,25 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
             //     they sit on top).
             let bar_h = 48usize;
             front.fill_rect(0, fh - bar_h, fw, bar_h, 0x101418);
+            front.fill_rect(0, fh - bar_h, fw, 1, 0x2a3238); // 1px taskbar top edge
             let dock = [0x00ff80u32, 0x0044ff, 0xffaa00, 0xcc3366];
+            let dock_labels = ["T", "F", "C", "N"];
             for (i, color) in dock.iter().enumerate() {
                 front.fill_rect(16 + i * 64, fh - bar_h + 8, 48, 32, *color);
+                // single-letter app label, centered in the 48x32 button.
+                let lx = 16 + i * 64 + (48 - GLYPH_W) / 2;
+                let ly = fh - bar_h + 8 + (32 - GLYPH_H) / 2;
+                front.draw_text(lx, ly, dock_labels[i], 0x101418);
             }
+            // Clock: raw PIT tick count ("T+<n>"). The PIT rate is VM-dependent,
+            // so this is a monotonic counter, not a time of day; right-aligned.
+            let mut tick_buf = [0u8; 12];
+            let tick_s = dec_ascii(ticks, &mut tick_buf);
+            let clock_w = (2 + tick_s.len()) * (GLYPH_W + 1); // "T+" + digits
+            let clock_x = fw.saturating_sub(clock_w + 16);
+            let clock_y = fh - bar_h + (bar_h - GLYPH_H) / 2;
+            front.draw_text(clock_x, clock_y, "T+", 0xffffff);
+            front.draw_text(clock_x + 2 * (GLYPH_W + 1), clock_y, tick_s, 0xffffff);
             // (c) two-window compositor scene (painter's algorithm) sized to be
             //     clearly visible in a screenshot.
             let wins = [
@@ -546,6 +584,10 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
                 Window { x: 300, y: 140, w: 320, h: 220, color: 0x0044ff }, // top
             ];
             paint_scene(&mut front, &wins);
+            // (c2) window chrome: 1px borders + title bars, drawn after the
+            //      composited bodies so the chrome reads on top.
+            decorate_window(&mut front, &wins[0], "Terminal", 0xffffff, 0x0d2f1f);
+            decorate_window(&mut front, &wins[1], "Files", 0xffffff, 0x0e2b4d);
             serial::write_raw(b"LIONOS_GFX_COMPOSITE nwins=");
             serial::write_dec(wins.len() as u64);
             serial::write_str("\r\n");

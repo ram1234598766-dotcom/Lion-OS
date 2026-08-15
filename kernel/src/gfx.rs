@@ -10,8 +10,8 @@
 //! `buf[..]` — every draw clamps to the Canvas bounds.
 
 use alloc::boxed::Box;
-use alloc::vec::Vec;
 use alloc::vec;
+use crate::drivers::font5x7::{glyph, GLYPH_H, GLYPH_W};
 
 /// A bounds-checked pixel plane.
 pub struct Canvas<'a> {
@@ -113,6 +113,30 @@ impl<'a> Canvas<'a> {
         }
         copied
     }
+
+    /// Draw the 5x7 font string `s` at `(x, y)` with color `fg` (0xRRGGBB).
+    ///
+    /// Glyphs come from `drivers::font5x7` in **row-major** order: each byte
+    /// is one row and bit `col` (0 = leftmost) marks that column, and
+    /// `(col,row)` paints directly (same convention as `fbtext::put_char`).
+    /// A character whose cell would start past the right edge stops the line
+    /// (no wrap). Rows are clipped by `set_pixel`.
+    pub fn draw_text(&mut self, mut x: usize, y: usize, s: &str, fg: u32) {
+        for ch in s.chars() {
+            if x.saturating_add(GLYPH_W) > self.width {
+                break;
+            }
+            let g = glyph(ch);
+            for (row, &mask) in g.iter().enumerate() {
+                for col in 0..GLYPH_W {
+                    if mask & (1 << col) != 0 {
+                        let _ = self.set_pixel(x + col, y.saturating_add(row), fg);
+                    }
+                }
+            }
+            x += GLYPH_W + 1;
+        }
+    }
 }
 
 /// An owned back-buffer (`Canvas` over its own plane) that can present onto a
@@ -172,6 +196,27 @@ pub fn paint_scene(canvas: &mut Canvas, windows: &[Window]) {
 /// focused window at a pointer/cursor position. Scans top (last) → bottom.
 pub fn focus(windows: &[Window], mx: usize, my: usize) -> Option<usize> {
     (0..windows.len()).rev().find(|&i| windows[i].covers(mx, my))
+}
+
+/// Height of the title-bar strip painted by [`decorate_window`], in pixels.
+pub const TITLE_BAR_H: usize = 18;
+
+/// Paint a window's chrome over an already-composited body: a 1px border in
+/// `w.color` plus a `TITLE_BAR_H`-tall title strip (title text vertically
+/// centered, left-aligned with a small pad). Everything clips to the canvas,
+/// and the strip height is clamped to the window so a tiny window degrades
+/// gracefully instead of painting outside its box.
+pub fn decorate_window(canvas: &mut Canvas, w: &Window, title: &str, title_fg: u32, title_bg: u32) {
+    let strip_h = TITLE_BAR_H.min(w.h);
+    // Title bar: background strip, then the title text centered on it.
+    canvas.fill_rect(w.x, w.y, w.w, strip_h, title_bg);
+    let ty = w.y + strip_h.saturating_sub(GLYPH_H) / 2;
+    canvas.draw_text(w.x + 4, ty, title, title_fg);
+    // 1px border around the whole window, drawn last so it frames the strip.
+    canvas.fill_rect(w.x, w.y, w.w, 1, w.color);
+    canvas.fill_rect(w.x, w.y.saturating_add(w.h).saturating_sub(1), w.w, 1, w.color);
+    canvas.fill_rect(w.x, w.y, 1, w.h, w.color);
+    canvas.fill_rect(w.x.saturating_add(w.w).saturating_sub(1), w.y, 1, w.h, w.color);
 }
 
 /// Fill `canvas` with a simple vertical gradient (deterministic per `(x,y)`).
@@ -396,5 +441,82 @@ mod tests {
         assert_eq!(dock_pop(0.0, 10, 5), 10); // start -> base
         // Overshoot region nudges above base before settling (peak value).
         assert!(dock_pop(0.5, 10, 5) >= 10);
+    }
+
+    #[test]
+    fn draw_text_renders_known_glyph_pixels() {
+        // 'A' = [0x06, 0x09, 0x09, 0x0F, 0x09, 0x09, 0x09] row-major:
+        // row 0 -> cols 1,2; row 1 -> cols 0,3; row 3 -> full bar cols 0..=4.
+        let mut c = canvas(10, 8, 1);
+        c.draw_text(0, 0, "A", 0xFF);
+        assert_eq!(c.read_pixel(1, 0), Some(0xFF));
+        assert_eq!(c.read_pixel(2, 0), Some(0xFF));
+        assert_eq!(c.read_pixel(0, 1), Some(0xFF));
+        assert_eq!(c.read_pixel(3, 1), Some(0xFF));
+        assert_eq!(c.read_pixel(1, 1), Some(0));
+        for x in 0..5 {
+            assert_eq!(c.read_pixel(x, 3), Some(0xFF));
+        }
+        assert_eq!(c.read_pixel(5, 3), Some(0)); // spacer column empty
+    }
+
+    #[test]
+    fn draw_text_skips_character_that_does_not_fit() {
+        // A 5px-wide canvas holds exactly one 5x7 glyph; the second 'A' would
+        // start at x=6 and is dropped (no wrap).
+        let mut one = canvas(5, 8, 1);
+        one.draw_text(0, 0, "A", 0xFF);
+        let mut two = canvas(5, 8, 1);
+        two.draw_text(0, 0, "AA", 0xFF);
+        for y in 0..8 {
+            for x in 0..5 {
+                assert_eq!(two.read_pixel(x, y), one.read_pixel(x, y));
+            }
+        }
+    }
+
+    #[test]
+    fn draw_text_spaces_letters_by_glyph_w_plus_one() {
+        // 'A' at x=0 and x=6; the spacer column (x=5) stays untouched.
+        let mut c = canvas(12, 8, 1);
+        c.draw_text(0, 0, "AA", 0xFF);
+        assert_eq!(c.read_pixel(5, 3), Some(0)); // spacer between letters
+        assert_eq!(c.read_pixel(6, 3), Some(0xFF)); // second letter's row 3
+        assert_eq!(c.read_pixel(0, 3), Some(0xFF)); // first letter intact
+    }
+
+    #[test]
+    fn draw_text_maps_non_printable_to_question() {
+        let mut c = canvas(10, 8, 1);
+        c.draw_text(0, 0, "\n", 0xFF);
+        // '\n' has no glyph; the font falls back to '?' — identical output.
+        let mut q = canvas(10, 8, 1);
+        q.draw_text(0, 0, "?", 0xFF);
+        for y in 0..8 {
+            for x in 0..10 {
+                assert_eq!(c.read_pixel(x, y), q.read_pixel(x, y));
+            }
+        }
+    }
+
+    #[test]
+    fn decorate_window_paints_border_title_bar_and_text() {
+        let mut c = canvas(40, 30, 3);
+        let w = Window { x: 4, y: 4, w: 20, h: 16, color: 0x00FF00 };
+        decorate_window(&mut c, &w, "Hi", 0xFFFFFF, 0x000000);
+        // strip_h = min(18, 16) = 16; title ty = 4 + (16-7)/2 = 8; 'H' starts
+        // at (4+4, 8) = (8,8); 'H' row 0 = 0x09 -> cols 0 and 3 -> pixels
+        // (8,8) and (11,8) are white, (9,8) untouched.
+        assert_eq!(c.read_pixel(8, 8), Some(0xFFFFFF));
+        assert_eq!(c.read_pixel(9, 8), Some(0x000000)); // inside strip, no glyph
+        // 1px border in the window color.
+        assert_eq!(c.read_pixel(4, 4), Some(0x00FF00)); // top-left
+        assert_eq!(c.read_pixel(23, 4), Some(0x00FF00)); // top-right
+        assert_eq!(c.read_pixel(4, 19), Some(0x00FF00)); // bottom-left
+        assert_eq!(c.read_pixel(23, 19), Some(0x00FF00)); // bottom-right
+        // Inside the window below the strip: body untouched (0).
+        assert_eq!(c.read_pixel(10, 12), Some(0));
+        // Outside the window: untouched.
+        assert_eq!(c.read_pixel(2, 2), Some(0));
     }
 }
