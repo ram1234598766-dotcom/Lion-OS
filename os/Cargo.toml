@@ -20,3 +20,24 @@ lionos-kernel = { path = "../kernel", artifact = "bin", target = "x86_64-unknown
 # compile THIS dependency at opt-level 1 even in a debug build.
 [profile.dev.package.lionos-kernel]
 opt-level = 1
+
+# The root workspace's [profile.release] does not apply here: this crate is a
+# separate workspace, and its artifact dependency is compiled with THIS crate's
+# release profile. Empirically only lto/strip propagate from the workspace-level
+# [profile.release] to the kernel artifact dep (opt-level/codegen-units do not),
+# so force them via the per-package override, which applies directly to the
+# dependency build. Without opt-level "s" the kernel .text was ~261 KB and its
+# .bss crossed the bootloader's stage-4 frames, failing to boot with
+# PageAlreadyMapped(0x13a000). lto/strip/panic cannot be set in a per-package
+# override, so they stay at the workspace level (they govern the artifact dep
+# too; the os bin itself is trivial). The x86_64-unknown-none target spec
+# aborts on panic by default, so no panic key is needed.
+[profile.release]
+lto = true
+strip = "symbols"
+
+# Applied directly to the kernel artifact dependency build (opt-level and
+# codegen-units are the two keys a per-package override may set).
+[profile.release.package.lionos-kernel]
+opt-level = "s"
+codegen-units = 1

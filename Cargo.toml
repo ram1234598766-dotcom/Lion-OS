@@ -6,6 +6,14 @@ members = ["kernel"]
 # and is intentionally NOT a workspace member.
 [profile.release]
 panic = "abort"
+# Memory optimization for the freestanding kernel image: cross-crate LTO with a
+# single codegen unit lets the linker drop dead code and inline across crate
+# boundaries; opt-level "s" favors size over speed; strip removes symbol tables
+# from the shipped ELF. Baseline .text was ~135 KB; target ~85-100 KB.
+lto = true
+codegen-units = 1
+opt-level = "s"
+strip = "symbols"
 
 [profile.dev]
 panic = "abort"
@@ -16,7 +24,6 @@ panic = "abort"
 opt-level = 1
 
 # Host-side unit tests (kernel/lib, run via `cargo test --target x86_64-unknown-linux-gnu`)
-# need the default unwind strategy so a failing assertion fails one test instead of
-# taking down the whole harness. The freestanding bin target keeps panic=abort.
-[profile.test]
-panic = "unwind"
+# already default to the unwind strategy (Cargo ignores a `panic` override for the
+# `test` profile), so a failing assertion fails one test instead of taking down the
+# whole harness. The freestanding bin target keeps panic=abort.
