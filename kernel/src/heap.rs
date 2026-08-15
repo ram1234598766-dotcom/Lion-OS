@@ -7,15 +7,14 @@
 //! header; `size` is the whole block (header + payload) in bytes, 8-aligned.
 //! Allocation first-fits a block big enough, unlinks it, splits any large tail
 //! back onto the list, and hands out `block + Node::SIZE`. Deallocation rebuilds
-//! a header at `ptr - Node::SIZE` and re-inserts it (LIFO; no address-ordered
-//! coalescing yet).
+//! a header at `ptr - Node::SIZE` and re-inserts it in ascending address order,
+//! merging with an adjacent free predecessor and/or successor so freed memory
+//! re-forms large runs instead of fragmenting.
 //!
 //! Alignment ceiling is 8 bytes — covers every type the M2 kernel and
 //! `Vec<u8>`/`Vec<u64>`/`String` need. `ponytail: align > 8 refused rather than
 //! returning a mis-aligned pointer; add boundary-tag alignment when the kernel
-//! needs super-aligned allocations. `ponytail: first-fit, no coalescing — the
-//! arena can fragment; add an address-sorted merge pass when fragmentation is
-//! measured to matter.`
+//! needs super-aligned allocations.`
 //!
 //! The allocator is pure and host-testable: tests run `alloc`/`dealloc` against
 //! a byte buffer. The kernel `GlobalAlloc` glue uses a `.bss` static.
@@ -159,8 +158,35 @@ impl KernelHeap {
         let block_addr = (ptr as usize) - Node::SIZE;
         let state = &mut *self.state.get();
         let node = block_addr as *mut Node;
-        (*node) = Node { next: state.head, size: size + Node::SIZE };
-        state.head = node;
+        // Rebuild the free-block header at the start of the freed block.
+        (*node) = Node { next: ptr::null_mut(), size: size + Node::SIZE };
+
+        // Walk the list in ascending address order, keeping a pointer to the
+        // predecessor's `next` field (`prev`) plus the preceding node (`pred`).
+        let mut pred: *mut Node = ptr::null_mut();
+        let mut prev = &mut state.head as *mut *mut Node;
+        loop {
+            let next = *prev;
+            if next.is_null() || next as usize > block_addr {
+                // Insert here, right-merging with the successor when adjacent.
+                if !next.is_null() && block_addr + (*node).size == next as usize {
+                    (*node).size += (*next).size;
+                    (*node).next = (*next).next;
+                } else {
+                    (*node).next = next;
+                }
+                // Left-merge with the predecessor when adjacent, else link in.
+                if !pred.is_null() && pred as usize + (*pred).size == block_addr {
+                    (*pred).size += (*node).size;
+                    (*pred).next = (*node).next;
+                } else {
+                    *prev = node;
+                }
+                break;
+            }
+            pred = next;
+            prev = &mut (*next).next as *mut *mut Node;
+        }
         state.used = state.used.saturating_sub(size);
     }
 }
@@ -314,6 +340,27 @@ mod tests {
         unsafe { h.dealloc_layout(p1, l) };
         let p2 = unsafe { h.alloc_layout(l) };
         assert_eq!(p1, p2, "LIFO free should reuse the same block");
+    }
+
+    #[test]
+    fn dealloc_coalesces_adjacent_blocks() {
+        // Arena sized so two 64-byte allocations (80-byte blocks: payload +
+        // Node header) leave only a 16-byte tail: 2*80 + 16 = 176. Freed in
+        // the wrong order (B then A), a 128-byte alloc (needs 144) can only
+        // succeed if the two adjacent 80-byte blocks coalesce into one run.
+        let mut buf = [0u8; 176];
+        let h = fresh(&mut buf);
+        let l = Layout::from_size_align(64, 8).unwrap();
+        let a = unsafe { h.alloc_layout(l) };
+        let b = unsafe { h.alloc_layout(l) };
+        assert!(!a.is_null() && !b.is_null());
+        unsafe {
+            h.dealloc_layout(b, l);
+            h.dealloc_layout(a, l);
+        }
+        let big = Layout::from_size_align(128, 8).unwrap();
+        let p = unsafe { h.alloc_layout(big) };
+        assert!(!p.is_null(), "adjacent frees should coalesce into a usable run");
     }
 
     #[test]
