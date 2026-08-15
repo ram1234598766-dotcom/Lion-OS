@@ -564,19 +564,19 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
             for (i, color) in dock.iter().enumerate() {
                 front.fill_rect(16 + i * 64, fh - bar_h + 8, 48, 32, *color);
                 // single-letter app label, centered in the 48x32 button.
-                let lx = 16 + i * 64 + (48 - GLYPH_W) / 2;
-                let ly = fh - bar_h + 8 + (32 - GLYPH_H) / 2;
-                front.draw_text(lx, ly, dock_labels[i], 0x101418);
+                let lx = 16 + i * 64 + (48 - 2 * GLYPH_W) / 2;
+                let ly = fh - bar_h + 8 + (32 - 2 * GLYPH_H) / 2;
+                front.draw_text_aa(lx, ly, dock_labels[i], 0x101418, 2);
             }
             // Clock: raw PIT tick count ("T+<n>"). The PIT rate is VM-dependent,
             // so this is a monotonic counter, not a time of day; right-aligned.
             let mut tick_buf = [0u8; 12];
             let tick_s = dec_ascii(ticks, &mut tick_buf);
-            let clock_w = (2 + tick_s.len()) * (GLYPH_W + 1); // "T+" + digits
+            let clock_w = (2 + tick_s.len()) * 2 * (GLYPH_W + 1); // "T+" + digits, AA scale 2
             let clock_x = fw.saturating_sub(clock_w + 16);
-            let clock_y = fh - bar_h + (bar_h - GLYPH_H) / 2;
-            front.draw_text(clock_x, clock_y, "T+", 0xffffff);
-            front.draw_text(clock_x + 2 * (GLYPH_W + 1), clock_y, tick_s, 0xffffff);
+            let clock_y = fh - bar_h + (bar_h - 2 * GLYPH_H) / 2;
+            front.draw_text_aa(clock_x, clock_y, "T+", 0xffffff, 2);
+            front.draw_text_aa(clock_x + 2 * 2 * (GLYPH_W + 1), clock_y, tick_s, 0xffffff, 2);
             // (c) two-window compositor scene (painter's algorithm) sized to be
             //     clearly visible in a screenshot.
             let wins = [

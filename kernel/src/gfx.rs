@@ -137,6 +137,80 @@ impl<'a> Canvas<'a> {
             x += GLYPH_W + 1;
         }
     }
+
+    /// Blend `fg` over the existing pixel at `(x, y)` with `alpha` in
+    /// `[0, 255]`. `alpha == 0` is a no-op (returns `true`); `alpha >= 255`
+    /// overwrites. Returns `false` if `(x, y)` is out of bounds.
+    pub fn blend_pixel(&mut self, x: usize, y: usize, fg: u32, alpha: u32) -> bool {
+        if alpha == 0 {
+            return true;
+        }
+        let bg = match self.read_pixel(x, y) {
+            Some(c) => c,
+            None => return false,
+        };
+        if alpha >= 255 {
+            let _ = self.set_pixel(x, y, fg);
+            return true;
+        }
+        let inv = 255 - alpha;
+        let fr = (fg >> 16) & 0xff;
+        let fg_ = (fg >> 8) & 0xff;
+        let fb = fg & 0xff;
+        let br = (bg >> 16) & 0xff;
+        let bg_ = (bg >> 8) & 0xff;
+        let bb = bg & 0xff;
+        let r = (fr * alpha + br * inv) / 255;
+        let g = (fg_ * alpha + bg_ * inv) / 255;
+        let b = (fb * alpha + bb * inv) / 255;
+        let _ = self.set_pixel(x, y, (r << 16) | (g << 8) | b);
+        true
+    }
+
+    /// Draw `s` at `(x, y)` with anti-aliased, `scale`-multiplied 5x7 glyphs
+    /// using supersampling (SS = 3) and Porter-Duff source-over blending. No
+    /// external font dependency. Each output pixel is covered by an `SS x SS`
+    /// supersample grid over the scaled glyph; the on-fraction becomes the
+    /// blend alpha. `scale == 0` draws nothing. Glyphs that would start past
+    /// the right edge stop the line (no wrap).
+    pub fn draw_text_aa(&mut self, mut x: usize, y: usize, s: &str, fg: u32, scale: usize) {
+        if scale == 0 {
+            return;
+        }
+        let ss = 3usize;
+        let fine = ss * scale; // supersample steps per glyph cell
+        for ch in s.chars() {
+            if x.saturating_add(scale * GLYPH_W) > self.width {
+                break;
+            }
+            let g = glyph(ch);
+            let ow = scale * GLYPH_W;
+            let oh = scale * GLYPH_H;
+            for oy in 0..oh {
+                for ox in 0..ow {
+                    let mut on = 0u32;
+                    for sy in 0..ss {
+                        let fy = oy * ss + sy;
+                        let grow = fy / fine;
+                        if grow >= GLYPH_H {
+                            continue;
+                        }
+                        let row_mask = g[grow];
+                        for sx in 0..ss {
+                            let fx = ox * ss + sx;
+                            let gcol = fx / fine;
+                            if gcol < GLYPH_W && (row_mask & (1u8 << gcol)) != 0 {
+                                on += 1;
+                            }
+                        }
+                    }
+                    let alpha = (on * 255) / ((ss * ss) as u32);
+                    let _ = self.blend_pixel(x + ox, y + oy, fg, alpha);
+                }
+            }
+            x += scale * (GLYPH_W + 1);
+        }
+    }
 }
 
 /// An owned back-buffer (`Canvas` over its own plane) that can present onto a
@@ -210,8 +284,8 @@ pub fn decorate_window(canvas: &mut Canvas, w: &Window, title: &str, title_fg: u
     let strip_h = TITLE_BAR_H.min(w.h);
     // Title bar: background strip, then the title text centered on it.
     canvas.fill_rect(w.x, w.y, w.w, strip_h, title_bg);
-    let ty = w.y + strip_h.saturating_sub(GLYPH_H) / 2;
-    canvas.draw_text(w.x + 4, ty, title, title_fg);
+    let ty = w.y + strip_h.saturating_sub(2 * GLYPH_H) / 2;
+    canvas.draw_text_aa(w.x + 4, ty, title, title_fg, 2);
     // 1px border around the whole window, drawn last so it frames the strip.
     canvas.fill_rect(w.x, w.y, w.w, 1, w.color);
     canvas.fill_rect(w.x, w.y.saturating_add(w.h).saturating_sub(1), w.w, 1, w.color);
@@ -504,19 +578,55 @@ mod tests {
         let mut c = canvas(40, 30, 3);
         let w = Window { x: 4, y: 4, w: 20, h: 16, color: 0x00FF00 };
         decorate_window(&mut c, &w, "Hi", 0xFFFFFF, 0x000000);
-        // strip_h = min(18, 16) = 16; title ty = 4 + (16-7)/2 = 8; 'H' starts
-        // at (4+4, 8) = (8,8); 'H' row 0 = 0x09 -> cols 0 and 3 -> pixels
-        // (8,8) and (11,8) are white, (9,8) untouched.
-        assert_eq!(c.read_pixel(8, 8), Some(0xFFFFFF));
-        assert_eq!(c.read_pixel(9, 8), Some(0x000000)); // inside strip, no glyph
+        // strip_h = min(18, 16) = 16; AA scale 2 -> title ty = 4 + (16-14)/2 = 5;
+        // 'H' starts at (4+4, 5) = (8,5); 'H' row 0 col 0 is on -> (8,5) white.
+        assert_eq!(c.read_pixel(8, 5), Some(0xFFFFFF));
+        assert_eq!(c.read_pixel(5, 5), Some(0x000000)); // inside strip, no glyph
         // 1px border in the window color.
         assert_eq!(c.read_pixel(4, 4), Some(0x00FF00)); // top-left
         assert_eq!(c.read_pixel(23, 4), Some(0x00FF00)); // top-right
         assert_eq!(c.read_pixel(4, 19), Some(0x00FF00)); // bottom-left
         assert_eq!(c.read_pixel(23, 19), Some(0x00FF00)); // bottom-right
-        // Inside the window below the strip: body untouched (0).
+        // Inside the window, off-glyph: strip background untouched (0).
         assert_eq!(c.read_pixel(10, 12), Some(0));
         // Outside the window: untouched.
         assert_eq!(c.read_pixel(2, 2), Some(0));
+    }
+
+    #[test]
+    fn blend_pixel_half_over_black_is_grey() {
+        let mut c = canvas(4, 4, 4);
+        c.clear(0x000000);
+        assert!(c.blend_pixel(1, 1, 0xFFFFFF, 128));
+        let p = c.read_pixel(1, 1).unwrap();
+        // ~0x808080 with 1/255 rounding tolerance.
+        assert!((p as i32 - 0x808080i32).abs() <= 0x010101, "got {:#x}", p);
+    }
+
+    #[test]
+    fn blend_pixel_opaque_overwrites() {
+        let mut c = canvas(4, 4, 4);
+        c.clear(0x000000);
+        assert!(c.blend_pixel(1, 1, 0x0000FF, 255));
+        assert_eq!(c.read_pixel(1, 1), Some(0x0000FF));
+    }
+
+    #[test]
+    fn blend_pixel_zero_alpha_is_noop() {
+        let mut c = canvas(4, 4, 4);
+        c.clear(0x000000);
+        assert!(c.blend_pixel(1, 1, 0xFFFFFF, 0));
+        assert_eq!(c.read_pixel(1, 1), Some(0x000000));
+    }
+
+    #[test]
+    fn draw_text_aa_opaque_core_and_off_glyph() {
+        let mut c = canvas(16, 16, 4);
+        c.clear(0x000000);
+        c.draw_text_aa(2, 2, "H", 0xFFFFFF, 2);
+        // 'H' output (ox=0, oy=0) at fb (2,2): fully covered -> white.
+        assert_eq!(c.read_pixel(2, 2), Some(0xFFFFFF));
+        // Before the glyph origin: untouched.
+        assert_eq!(c.read_pixel(0, 0), Some(0x000000));
     }
 }
